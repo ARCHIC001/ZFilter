@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# NIKONFILTER 启动器（纯 CLI 入口）
+# 目标：
+# 1) 支持软链接调用时正确定位项目目录
+# 2) 选择可用 Python 解释器（支持环境变量覆盖）
+# 3) 直接启动 CLI 主程序（不做 tkinter 检查）
+
+resolve_source() {
+  local src="$1"
+
+  # 优先 realpath（若可用）
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$src"
+    return 0
+  fi
+
+  # 兼容环境：手动解析符号链接
+  while [ -L "$src" ]; do
+    local dir
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    local target
+    target="$(readlink "$src")"
+    if [[ "$target" != /* ]]; then
+      src="$dir/$target"
+    else
+      src="$target"
+    fi
+  done
+
+  local final_dir
+  final_dir="$(cd -P "$(dirname "$src")" && pwd)"
+  echo "$final_dir/$(basename "$src")"
+}
+
+print_error() {
+  echo "Error: $*" >&2
+}
+
+choose_python() {
+  # 优先级：
+  # 1) NIKONFILTER_PYTHON 指定解释器
+  # 2) python3
+  # 3) python
+  if [[ -n "${NIKONFILTER_PYTHON:-}" ]]; then
+    if command -v "${NIKONFILTER_PYTHON}" >/dev/null 2>&1; then
+      echo "${NIKONFILTER_PYTHON}"
+      return 0
+    else
+      print_error "NIKONFILTER_PYTHON 指定的解释器不可用: ${NIKONFILTER_PYTHON}"
+      return 1
+    fi
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    echo "python3"
+    return 0
+  fi
+
+  if command -v python >/dev/null 2>&1; then
+    echo "python"
+    return 0
+  fi
+
+  return 1
+}
+
+SELF_PATH="$(resolve_source "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd -P "$(dirname "$SELF_PATH")" && pwd)"
+PY_APP="${SCRIPT_DIR}/nikonfilter.py"
+
+if [[ ! -f "$PY_APP" ]]; then
+  print_error "cannot find nikonfilter.py next to this launcher."
+  print_error "Resolved launcher path: $SELF_PATH"
+  print_error "Expected: $PY_APP"
+  echo ""
+  echo "Hint: reinstall launcher from project directory:"
+  echo "  bash install.sh"
+  exit 1
+fi
+
+if ! PY_BIN="$(choose_python)"; then
+  print_error "Python 未安装或不可用（找不到 python3/python）。"
+  exit 1
+fi
+
+# 纯 CLI 入口：直接执行主程序，并把用户输入的命令名传给 Python 帮助文本
+export NIKONFILTER_COMMAND_NAME="$(basename "$0")"
+exec "$PY_BIN" "$PY_APP" "$@"
