@@ -48,7 +48,7 @@ for line in subprocess.check_output(['ps','-axo','pid=,command='],text=True).spl
 PY
   ditto "$APP" "$installed"
   touch "$installed"
-  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$APP"
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$APP" >/dev/null 2>&1 || true
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$installed"
   if [[ $# -gt 1 ]]; then
     open "$installed" --args "${@:2}"
