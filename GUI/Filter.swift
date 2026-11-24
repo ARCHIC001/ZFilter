@@ -154,6 +154,7 @@ enum ProjectReadState { case ready, loading, failed }
     }
     init(preferences: UserDefaults = .standard, journal: URL? = nil) {
         self.preferences = preferences
+        // Keep the existing journal across the app's display-name change.
         self.journal = journal ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Filter/trash-history.json")
         collapsed = preferences.bool(forKey: "sidebarCollapsed")
         appearance = FilterAppearance(rawValue: preferences.string(forKey: "filterAppearance") ?? "") ?? .system
@@ -654,7 +655,7 @@ struct ContentView: View {
                 HStack { Circle().fill(m.working ? FilterPalette.orange.color : accent).frame(width: 5, height: 5); Text(m.status).font(.system(size: 11)).foregroundStyle(.secondary); Spacer() }.padding(.horizontal, 24).padding(.bottom, 10)
             }
         }
-        .alert("Filter", isPresented: Binding(get: { m.error != nil }, set: { if !$0 { m.error = nil } })) { Button("好") { m.error = nil } } message: { Text(m.error ?? "") }
+        .alert("ZFilter", isPresented: Binding(get: { m.error != nil }, set: { if !$0 { m.error = nil } })) { Button("好") { m.error = nil } } message: { Text(m.error ?? "") }
         .confirmationDialog(m.dry ? "开始演练？文件不会移动。" : "整理所选目录及其子文件夹中的素材？输出将写入：\n" + m.root + "\n可通过整理日志撤销。", isPresented: $confirmRun, titleVisibility: .visible) { Button(m.dry ? "开始演练" : "开始整理") { Task { await m.run() } } }
         .confirmationDialog("撤销最近一次整理，将文件移回原目录？", isPresented: $confirmUndo, titleVisibility: .visible) { Button("撤销整理") { Task { await m.run(true) } } }
         .onChange(of: m.mode) { _, _ in m.schedulePreview() }.onChange(of: m.travel) { _, _ in m.schedulePreview() }.onChange(of: m.rules) { _, _ in m.schedulePreview() }
@@ -685,11 +686,11 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 Image(nsImage: AppArtwork.icon).resizable().scaledToFit()
                     .frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: m.collapsed ? 9 : 11))
-                if !m.collapsed { Text("Filter").font(.system(size: 24, weight: .semibold)) }
+                if !m.collapsed { Text("ZFilter").font(.system(size: 24, weight: .semibold)) }
             }.frame(width: m.collapsed ? 44 : nil, height: 44).contentShape(Rectangle())
         }.buttonStyle(.plain)
             .help(dark ? "切换为浅色模式" : "切换为深色模式")
-            .accessibilityLabel("切换 Filter 外观")
+            .accessibilityLabel("切换 ZFilter 外观")
             .accessibilityValue(dark ? "深色模式" : "浅色模式")
     }
     var projectSortMenu: some View {
@@ -1071,7 +1072,7 @@ struct FilterApp: App {
     @StateObject var model = Model()
     @State private var didApplyLaunchPhoto = false
     var body: some Scene {
-        WindowGroup("Filter") { ContentView().environmentObject(model).onAppear {
+        WindowGroup("ZFilter") { ContentView().environmentObject(model).onAppear {
             NSApp.applicationIconImage = AppArtwork.icon; NSApp.dockTile.display()
             model.startProjectMonitoring()
             if let i = CommandLine.arguments.firstIndex(of: "--project"), CommandLine.arguments.indices.contains(i+1), model.root.isEmpty { model.open(CommandLine.arguments[i+1]) }

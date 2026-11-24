@@ -1,31 +1,31 @@
 <div align="center">
-  <img src="docs/images/filter-icon.png" width="104" alt="Filter 应用图标">
-  <h1>Filter</h1>
+  <img src="docs/images/zfilter-icon.png" width="104" alt="ZFilter 应用图标">
+  <h1>ZFilter</h1>
   <p>在 Mac 上整理 JPEG、RAW 与视频，再从一组配对照片里选出要保留的画面。</p>
   <p><strong>macOS 26+</strong> · <strong>Apple Silicon</strong> · SwiftUI / AppKit · Liquid Glass</p>
-  <p><a href="https://github.com/ARCHIC001/Filter/releases/latest">下载 macOS 安装包</a> · <a href="docs/tutorial.md">图文使用教程</a> · <a href="docs/cli.md">命令行指南</a></p>
+  <p><a href="https://github.com/ARCHIC001/ZFilter/releases/latest">下载 macOS 安装包</a> · <a href="docs/tutorial.md">图文使用教程</a> · <a href="docs/cli.md">命令行指南</a></p>
 </div>
 
-![Filter 沉浸选片，显示香港街景、绿色相机对焦框、红色配对预览条和正式池](docs/images/viewer.jpg)
+![ZFilter 沉浸选片，右侧打开 EXIF 照片信息面板，显示直方图、曝光参数和 Nikon 色彩预设](docs/images/inspector.jpg)
 
 ## 从目录整理到沉浸选片
 
-Filter 以一个素材文件夹为项目，递归清点文件、验证 JPEG／RAW 配对，并预览每条整理规则的结果。确认整理后，JPEG、RAW 和视频会进入各自的目录。照片分开存放后，仍可在同一个项目里作为一对查看、暂存和恢复。
+ZFilter 以一个素材文件夹为项目，递归清点文件、验证 JPEG／RAW 配对，并预览每条整理规则的结果。确认整理后，JPEG、RAW 和视频会进入各自的目录。照片分开存放后，仍可在同一个项目里作为一对查看、暂存和恢复。
 
-| 工作 | Filter 提供 |
+| 工作 | ZFilter 提供 |
 | --- | --- |
 | **清点与整理** | 查看项目体积、数量和格式。支持普通、RED、自定义规则、按 EXIF 日期分组的旅行模式，以及只预演的演练模式。每次正式整理留下可撤销的记录。 |
 | **配对与查看** | 按整理日志和目录内的唯一候选验证配对。查看全部 JPEG、原生显影 RAW，或仅查看已配对的 JPEG。 |
 | **放大与筛选** | 单击 1:1，按 **0** 在相机记录的对焦点放大并跨照片保持。预览条显示前后三张，定位轨跨越整个列表，受支持的 Nikon 连拍可以逐组折叠。 |
 | **待删复核** | 正式池中按 **W** 暂存，待删池中按 **W** 恢复。按 **S** 或 **Delete** 移入系统废纸篓，按 **⌘Z** 撤回最近一次删除。 |
 | **照片信息** | 查看 RGB 与亮度直方图、曝光补偿、测光、闪光、Nikon 色彩预设、对焦距离和 JPEG／RAW 各自的文件大小。 |
-| **项目与外观** | 项目支持置顶、排序和外置磁盘在线状态。点击左上角 Logo 或「Filter」切换深浅色。 |
+| **项目与外观** | 项目支持置顶、排序和外置磁盘在线状态。点击左上角 Logo 或「ZFilter」切换深浅色。 |
 
 ## 安装
 
-1. 在 [GitHub Releases](https://github.com/ARCHIC001/Filter/releases/latest) 下载 `Filter-1.9.6-macOS-arm64.dmg`。
-2. 打开磁盘映像，将 **Filter.app** 拖到 **Applications**。已有旧版时，先退出运行中的 Filter。
-3. 从「应用程序」打开 Filter。整理引擎使用 `/usr/bin/python3`，如果系统提示缺少命令行工具，按提示安装，或在终端运行 `xcode-select --install`。 [Apple 命令行工具安装说明](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
+1. 在 [GitHub Releases](https://github.com/ARCHIC001/ZFilter/releases/latest) 下载 `ZFilter-1.9.7-macOS-arm64.dmg`。
+2. 打开磁盘映像，将 **ZFilter.app** 拖到 **Applications**。已有旧版时，先退出运行中的 ZFilter。
+3. 从「应用程序」打开 ZFilter。整理引擎使用 `/usr/bin/python3`，如果系统提示缺少命令行工具，按提示安装，或在终端运行 `xcode-select --install`。 [Apple 命令行工具安装说明](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
 4. 当前下载包使用 ad-hoc 签名，首次打开时 macOS 可能要求确认。安装前可对照发布页的 SHA-256，按 Apple 的说明处理首次启动提示。 [校验与首次启动](docs/tutorial.md#安装和首次启动) · [Apple 安全打开指南](https://support.apple.com/zh-cn/102445)
 
 ## 快速上手
@@ -47,4 +47,4 @@ bash GUI/build.sh
 bash GUI/package.sh
 ```
 
-应用写入 `build/Filter.app`，DMG 与校验文件写入 `build/dist/`。整理引擎也可通过 `./nikonfilter` 运行。 [命令行指南](docs/cli.md) · [验证与元数据参考](docs/development.md)
+应用写入 `build/ZFilter.app`，DMG 与校验文件写入 `build/dist/`。整理引擎也可通过 `./nikonfilter` 运行。 [命令行指南](docs/cli.md) · [验证与元数据参考](docs/development.md)

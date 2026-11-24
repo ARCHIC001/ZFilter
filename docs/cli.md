@@ -1,6 +1,6 @@
-# nikonfilter 命令行指南
+# ZFilter 命令行指南
 
-适用于终端和批处理。GUI 安装与选片请参见 [Filter 使用教程](tutorial.md)。
+在终端和批处理中使用 `nikonfilter` 命令。GUI 安装与选片请参见 [ZFilter 使用教程](tutorial.md)。
 
 ## 适用场景
 
@@ -301,7 +301,7 @@ source ~/.zshrc
 - 主程序：`nikonfilter.py`
 - 启动器：`nikonfilter`
 - 安装脚本：`install.sh`
-- GUI 文档见 [Filter 使用教程](tutorial.md)。
+- GUI 文档见 [ZFilter 使用教程](tutorial.md)。
 
 ---
 

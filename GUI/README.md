@@ -1,4 +1,4 @@
-# Filter GUI
+# ZFilter GUI
 
 [项目介绍](../README.md) · [图文使用教程](../docs/tutorial.md)
 
@@ -6,7 +6,7 @@ macOS 26+ / Apple Silicon 原生应用，SwiftUI + AppKit + ImageIO，采用系�
 
 ## 使用
 
-打开 `~/Applications/Filter.app`。选择素材父目录，选择普通、RED 或自定义模式，可叠加旅行模式和演练模式。先预检查，再执行。操作记录可查看日志、撤销最近一次实际移动。
+打开 `~/Applications/ZFilter.app`。选择素材父目录，选择普通、RED 或自定义模式，可叠加旅行模式和演练模式。先预检查，再执行。操作记录可查看日志、撤销最近一次实际移动。
 
 在「沉浸选片」浏览 JPEG / RAW：
 
@@ -28,7 +28,7 @@ macOS 26+ / Apple Silicon 原生应用，SwiftUI + AppKit + ImageIO，采用系�
 ## 构建与验证
 
 ```sh
-bash GUI/build.sh             # build/Filter.app
+bash GUI/build.sh             # build/ZFilter.app
 bash GUI/build.sh --install   # 安装到 ~/Applications 并启动
 python3 GUI/test_filter.py    # test 样本副本的端到端检查
 ```
@@ -74,12 +74,12 @@ W 使用真实移动，保留文件字节和旅行子目录结构，不复制双
 
 ```sh
 bash GUI/build.sh
-build/Filter.app/Contents/MacOS/Filter --self-test "$PWD/test"
+build/ZFilter.app/Contents/MacOS/ZFilter --self-test "$PWD/test"
 python3 GUI/test_filter.py
-build/Filter.app/Contents/MacOS/Filter --display-benchmark "$PWD/build/体验项目/DSC_0920.JPG"
+build/ZFilter.app/Contents/MacOS/ZFilter --display-benchmark "$PWD/build/体验项目/DSC_0920.JPG"
 ```
 
-测试程序在临时目录中复制样本，不改变当前 `test` 的正式池/待删池状态。显示性能测试会短暂打开一个窗口，进行 3 秒的真实显示回调与 1:1 平移测量。也可直接打开项目：`open -a ~/Applications/Filter.app --args --project /素材目录`。
+测试程序在临时目录中复制样本，不改变当前 `test` 的正式池/待删池状态。显示性能测试会短暂打开一个窗口，进行 3 秒的真实显示回调与 1:1 平移测量。也可直接打开项目：`open -a ~/Applications/ZFilter.app --args --project /素材目录`。
 
 
 ## 1.1.1：目录边界与增量整理修复
@@ -119,7 +119,7 @@ build/Filter.app/Contents/MacOS/Filter --display-benchmark "$PWD/build/体验项
 - 切图时相邻小图平滑移入中心；W 使用向上飞出的小图快照，S / Delete 使用 70 块带原图纹理的粒子碎片消散。位移及粒子由 Core Animation 图层播放，不逐帧重新布局 SwiftUI 窗口。动画并行播放，文件操作与下一张预览不等待动画结束。关闭预览条时不产生这些视觉效果。
 - 小图独立按最大 320 px 解码，使用 24 MiB 有界缓存及后台队列，不为预览条加载七张原尺寸照片。减少动态效果开启时改为短淡出，不播放飞出和碎片位移。
 
-验证：`build/Filter.app/Contents/MacOS/Filter --self-test "$PWD/test"`。测试使用样本副本，包含实际 SwiftUI / AppKit 窗口中的对焦点保持、快速切图、适应窗口解除、缺失 AF 恢复、缩略图开关持久化及 W/S 事件；粒子逐像素渲染检查与真实窗口显示回调测量同时运行。
+验证：`build/ZFilter.app/Contents/MacOS/ZFilter --self-test "$PWD/test"`。测试使用样本副本，包含实际 SwiftUI / AppKit 窗口中的对焦点保持、快速切图、适应窗口解除、缺失 AF 恢复、缩略图开关持久化及 W/S 事件；粒子逐像素渲染检查与真实窗口显示回调测量同时运行。
 
 ## 1.4：中心兜底、系统图标与界面精简
 
@@ -128,7 +128,7 @@ build/Filter.app/Contents/MacOS/Filter --display-benchmark "$PWD/build/体验项
 - 原图缓存按物理内存 / 24 设置，限制在 320–768 MiB，最多三帧；当前帧复用并提升已排队的预读，避免重复解码。
 - 移除侧栏底部标语、底部快捷键重复文本、品牌页脚和装饰性英文口号；浏览页隐藏常驻状态页脚，整理和记录页保留必要状态。快捷键仍可从菜单和按钮提示查看。
 - 工具栏使用共享 GlassEffectContainer，浮动控制、EXIF 面板和预览条增加原生交互玻璃及细致边缘和阴影；缩略图的悬停抬升、边缘和透明度变化由 Core Animation 处理，不增加常驻逐帧任务。内容统计区域继续使用清晰的普通背景。
-- `Info.plist` 指向版本化的 `Filter-1.4.icns`；运行时更新应用图标。安装会退出旧进程、覆盖应用、移除开发构建的系统登记，再登记正式安装路径，防止旧实例和旧登记继续使用过期资源。
+- `Info.plist` 指向版本化的应用图标；运行时更新应用图标。安装会退出旧进程、覆盖应用、移除开发构建的系统登记，再登记正式安装路径，防止旧实例和旧登记继续使用过期资源。
 
 安装时也可恢复指定项目与照片：
 
@@ -209,8 +209,12 @@ bash GUI/build.sh --install --project /素材目录 --photo /素材目录/Jpg素
 
 ## 1.9.5
 
-- 点击左上角 Logo 或「Filter」，可在深色和浅色外观之间切换。折叠侧栏时仍可点击 Logo。首次使用时跟随系统，手动选择会在下次启动时恢复。
+- 点击左上角 Logo 或「ZFilter」，可在深色和浅色外观之间切换。折叠侧栏时仍可点击 Logo。首次使用时跟随系统，手动选择会在下次启动时恢复。
 
 ## 1.9.6
 
 - 「拍摄时间」中的日期以 `YYYY-MM-DD` 显示，时分秒以冒号分隔。
+
+## 1.9.7
+
+- 项目与应用更名为 ZFilter。此前保存的项目、主题偏好和撤回记录可继续使用。

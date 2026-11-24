@@ -30,7 +30,7 @@ func drawIcon(_ c: CGContext) {
 }
 let output = URL(fileURLWithPath:CommandLine.arguments[1])
 let fm = FileManager.default
-let iconset = output.appendingPathComponent("Filter.iconset")
+let iconset = output.appendingPathComponent("ZFilter.iconset")
 try fm.createDirectory(at:iconset,withIntermediateDirectories:true)
 var media = CGRect(x:0,y:0,width:1024,height:1024)
 let pdf = output.appendingPathComponent("AppIcon.pdf")

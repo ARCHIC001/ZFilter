@@ -1,4 +1,4 @@
-# 构建与验证
+# ZFilter 构建与验证
 
 [返回项目介绍](../README.md) · [图文使用教程](tutorial.md)
 
@@ -11,7 +11,7 @@ bash GUI/build.sh
 bash GUI/package.sh
 ```
 
-- `build/Filter.app` 是原生应用。也可用 `bash GUI/build.sh --install` 安装到 `~/Applications`。
+- `build/ZFilter.app` 是原生应用。也可用 `bash GUI/build.sh --install` 安装到 `~/Applications`。
 - `build/dist/` 包含带「Applications」快捷方式的 DMG 和 SHA-256 文件。
 - `GUI/DrawIcon.swift` 生成应用图标。应用内包含整理桥接脚本和 CLI 核心，运行时使用 `/usr/bin/python3`。
 - 本地构建默认使用 ad-hoc 签名。GitHub 分发包的签名和首次启动步骤见 [图文教程](tutorial.md#安装和首次启动)。

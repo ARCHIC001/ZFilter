@@ -1,12 +1,12 @@
-# Filter 图文使用教程
+# ZFilter 图文使用教程
 
-[返回项目介绍](../README.md) · [下载安装包](https://github.com/ARCHIC001/Filter/releases/latest) · [命令行指南](cli.md)
+[返回项目介绍](../README.md) · [下载安装包](https://github.com/ARCHIC001/ZFilter/releases/latest) · [命令行指南](cli.md)
 
 以下步骤使用名为 `releasetest` 的实际项目副本，内有 Nikon Z8 的 4 对 JPEG／NEF 和 1 段 MOV。你可以用自己的素材副本逐步操作。
 
 ## 安装和首次启动
 
-1. 下载 **Filter-1.9.6-macOS-arm64.dmg**。它适用于 Apple Silicon Mac，要求 macOS 26 或更新版本。
+1. 下载 **ZFilter-1.9.7-macOS-arm64.dmg**。它适用于 Apple Silicon Mac，要求 macOS 26 或更新版本。
 2. 如需校验，同时下载 **SHA256SUMS.txt**，将两个文件放在同一目录。如果放在「下载」，可在终端运行以下命令，看到 `OK` 后再打开映像。
 
    ```sh
@@ -14,9 +14,11 @@
    shasum -a 256 -c SHA256SUMS.txt
    ```
 
-3. 在 Finder 打开 DMG，把 **Filter.app** 拖到 **Applications**，然后从「应用程序」打开 Filter。当前版本使用 ad-hoc 签名，尚未通过 Apple 公证。若 macOS 阻止启动，核对下载来源和校验结果后，按 Apple 指南在「系统设置 → 隐私与安全性」为 Filter 确认打开。 [Apple 安全打开指南](https://support.apple.com/zh-cn/102445)
-4. 这版使用系统路径 `/usr/bin/python3`。如果该路径首次运行时提示安装开发者工具，可执行 `xcode-select --install` 完成安装，再重新打开 Filter。 [Apple 命令行工具安装说明](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
+3. 在 Finder 打开 DMG，把 **ZFilter.app** 拖到 **Applications**，然后从「应用程序」打开 ZFilter。当前版本使用 ad-hoc 签名，尚未通过 Apple 公证。若 macOS 阻止启动，核对下载来源和校验结果后，按 Apple 指南在「系统设置 → 隐私与安全性」为 ZFilter 确认打开。 [Apple 安全打开指南](https://support.apple.com/zh-cn/102445)
+4. 这版使用系统路径 `/usr/bin/python3`。如果该路径首次运行时提示安装开发者工具，可执行 `xcode-select --install` 完成安装，再重新打开 ZFilter。 [Apple 命令行工具安装说明](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
 5. 如果系统提示访问文稿或外置卷，请允许访问本次要整理的素材所在位置。
+
+从 1.9.6 升级时，先退出旧版再安装 ZFilter。项目列表、外观设置和撤回记录会自动沿用。确认新版正常后，可以将旧版应用移出「应用程序」。
 
 ## 1. 打开目录并核对项目统计
 
@@ -59,6 +61,8 @@ releasetest/
 
 点击侧栏「沉浸选片」或整理完成后的「开始选片」。左下角三个按钮同时决定浏览范围和 **W / S / Delete** 操作范围。
 
+![ZFilter 沉浸选片页，显示照片、绿色对焦框、预览条和三个文件范围按钮](images/viewer.jpg)
+
 | 按钮 | 浏览 | 文件操作范围 |
 | --- | --- | --- |
 | 绿 · **仅 JPEG** | 所有 JPEG | 当前 JPEG |
@@ -70,7 +74,7 @@ releasetest/
 - 用 **← / →** 或 **A / D** 逐张浏览。也可点击缩略图，横向拖动预览条，或者拖动下方的「快速定位」轨道后松手跳转。
 - 单击照片可在点击处放大到原始像素，拖动查看细节，再点一次缩回。**0 / O** 会开启跨图保持的 100% 对焦点放大；照片没有可用的对焦坐标时以画面中心放大。按 **、** 或点击工具栏缩小按钮，恢复适应窗口。
 - **F** 显示或隐藏相机记录的绿色对焦框。**T** 开关预览条。支持的连拍有 **×张数** 或 **帧序号／张数** 角标，点角标只切换这一组，**B** 或顶部叠片按钮切换所有组。
-- **Tab** 隐藏或恢复侧栏，左上角 Logo 或「Filter」切换深浅色。
+- **Tab** 隐藏或恢复侧栏，左上角 Logo 或「ZFilter」切换深浅色。
 
 ## 4. 用直方图、对焦与配对信息判断
 
@@ -87,7 +91,7 @@ releasetest/
 1. 确认左下角选中的文件范围。在绿色「正式池」中选中照片并按 **W**。示例选择红色 **JPEG+RAW**，因此两份配对文件一起移到待删池。
 2. 点击顶部「待删池」。此时按钮变为橙色，示例中显示 **正式池 3、待删池 1**。可以像正式池一样放大并查看详情。
 3. 反悔时按 **W** 恢复当前照片所选范围的文件。确认移除时按 **S** 或 **Delete**，文件进入 macOS 废纸篓。
-4. 需要撤回最近一次废纸篓操作时按 **⌘Z**。如果那张照片原先位于待删池，撤回后可以回到待删池再按 **W** 恢复至正式池。清空系统废纸篓后，Filter 无法从中恢复文件。
+4. 需要撤回最近一次废纸篓操作时按 **⌘Z**。如果那张照片原先位于待删池，撤回后可以回到待删池再按 **W** 恢复至正式池。清空系统废纸篓后，ZFilter 无法从中恢复文件。
 
 ![待删池以橙色高亮，显示 1 对照片等待复核，正式池剩余 3 对](images/review-pool.jpg)
 
@@ -99,7 +103,7 @@ releasetest/
 
 ## 常见问题
 
-- **只看到 JPEG 或 RAW 的一边。** 确认所选项目包含两类文件并刷新。Filter 优先依据整理日志，其次依据同目录或项目内唯一同名候选，并在可读时核对 EXIF 日期。出现歧义时，使用单文件范围查看和处理；详情可核对配对依据。
+- **只看到 JPEG 或 RAW 的一边。** 确认所选项目包含两类文件并刷新。ZFilter 优先依据整理日志，其次依据同目录或项目内唯一同名候选，并在可读时核对 EXIF 日期。出现歧义时，使用单文件范围查看和处理；详情可核对配对依据。
 - **外置盘拔出后项目变黄。** 接回磁盘并刷新项目。右键「删除项目」只移除列表记录。
 - **没有绿色对焦框或连拍角标。** 打开对应功能，并确认文件自身带有兼容的 Nikon 对焦或连拍记录。对焦距离也是镜头记录的估算值。
 - **想批量调用整理规则。** 使用项目保留的 [nikonfilter 命令行入口](cli.md)。
