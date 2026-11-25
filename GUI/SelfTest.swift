@@ -199,7 +199,8 @@ import ImageIO
         catch { blockedFormal = true }
         try check(blockedFormal && plan.directories.allSatisfy { fm.fileExists(atPath: $0) }, "filesystem validation rejects formal paths before moving any folder")
         await model.removePool(plan)
-        try check(model.error == nil && model.poolDirectories.isEmpty && model.poolBatches.isEmpty && model.showPool, "successful bulk delete refreshes this pool with no stale batches")
+        try check(model.error == nil && model.poolDirectories.isEmpty && model.poolBatches.isEmpty && model.showPool,
+                  "successful bulk delete refreshes this pool with no stale batches (\(model.error ?? "no error"))")
         try check(plan.directories.allSatisfy { !fm.fileExists(atPath: $0) } && fm.fileExists(atPath: unrelated.path), "all confirmed directories leave project; unrelated folders remain")
         try check(model.trash.count == 1 && model.trash.last?.count == 3, "bulk delete records a single undo group")
         model.restore(); try await settle(model)
