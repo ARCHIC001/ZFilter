@@ -69,6 +69,13 @@ enum FileActions {
         try JSONEncoder().encode(value).write(to: url, options: .atomic)
     }
     static func poolURL(_ root: String) -> URL { URL(fileURLWithPath: root).appendingPathComponent(".nikonfilter_logs/pool.json") }
+    static func poolDirectory(for path: String, root: String) -> String? {
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        guard path.hasPrefix(prefix) else { return nil }
+        let parts = path.dropFirst(prefix.count).split(separator: "/").map(String.init)
+        guard !parts.contains(where: { $0.hasPrefix(".") }), let index = parts.firstIndex(where: isShadowName) else { return nil }
+        return prefix + parts[...index].joined(separator: "/")
+    }
     static func shadowDestination(_ path: String, root: String, isRaw: Bool) throws -> URL {
         let file = URL(fileURLWithPath: path).standardizedFileURL
         let base = URL(fileURLWithPath: root).standardizedFileURL
@@ -84,22 +91,24 @@ enum FileActions {
         }
         return base.appendingPathComponent((isRaw ? "DRaw" : "DJpg") + base.lastPathComponent).appendingPathComponent(String(file.path.dropFirst(base.path.count + 1)))
     }
-    static func unique(_ url: URL) -> URL {
-        if !FileManager.default.fileExists(atPath: url.path) { return url }
+    static func unique(_ url: URL, reserved: Set<String>) -> URL {
+        if !reserved.contains(url.path), !FileManager.default.fileExists(atPath: url.path) { return url }
         return url.deletingPathExtension().appendingPathExtension(UUID().uuidString + "." + url.pathExtension)
     }
     static func stage(_ photo: Photo, paths: [String], root: String) throws -> PoolBatch {
         let fm = FileManager.default
         var batch = PoolBatch(id: UUID().uuidString, photo: photo, entries: [])
+        let journal = poolURL(root)
+        var batches = try read([PoolBatch].self, journal, default: [])
+        var reserved = Set(batches.flatMap { $0.entries.map(\.trash) })
         for path in paths {
             let source = URL(fileURLWithPath: path)
             let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else { throw failure("文件已变化，请刷新后重试") }
-            let destination = unique(try shadowDestination(path, root: root, isRaw: path == photo.raw))
+            let destination = unique(try shadowDestination(path, root: root, isRaw: path == photo.raw), reserved: reserved)
+            reserved.insert(destination.path)
             batch.entries.append(TrashEntry(original: path, trash: destination.path))
         }
-        let journal = poolURL(root)
-        var batches = try read([PoolBatch].self, journal, default: [])
         batches.append(batch)
         try save(batches, journal)
         var moved: [TrashEntry] = []
@@ -173,11 +182,25 @@ enum FileActions {
             }
         }
     }
-    static func trash(_ paths: [String], journal: URL) throws -> Int {
+    static func trash(_ paths: [String], journal: URL, poolRoot: String? = nil) throws -> Int {
+        func validatePoolDirectory(_ path: String, root: String) throws {
+            let url = URL(fileURLWithPath: path, isDirectory: true)
+            let properties = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard poolDirectory(for: path, root: root) == path,
+                  url.standardizedFileURL.path == path, url.resolvingSymlinksInPath().path == path,
+                  properties.isDirectory == true, properties.isSymbolicLink != true else {
+                throw failure("待删池目录已经变化，请刷新后重试：\(path)")
+            }
+        }
+        if let poolRoot {
+            for path in paths { try validatePoolDirectory(path, root: poolRoot) }
+        }
         var batches = try read([[TrashEntry]].self, journal, default: [])
+        if poolRoot != nil { try save(batches, journal) }
         batches.append([])
         var count = 0
         for path in paths {
+            if let poolRoot { try validatePoolDirectory(path, root: poolRoot) }
             guard FileManager.default.fileExists(atPath: path) else { throw failure("文件已被移动，请刷新：\(path)") }
             var result: NSURL?
             try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: &result)

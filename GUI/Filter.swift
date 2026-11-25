@@ -31,9 +31,15 @@ struct RunRecord: Codable, Identifiable {
 }
 struct Library: Codable {
     var rawPhotos: [Photo]?; var poolRawPhotos: [Photo]?
+    var poolDirectories: [String]?
     var root: String; var pending: Int; var photos: [Photo]; var poolPhotos: [Photo]; var poolBatches: [PoolBatch]; var counts: [String: Int]; var sizes: [String: Int64]; var mediaCount: Int; var formats: [String: Int]; var preview: [String: Int]; var organized: Bool; var paired: Int; var orphanRaw: Int; var ambiguous: Int; var history: [RunRecord]
 }
 struct TrashEntry: Codable { var original: String; var trash: String }
+struct PoolRemoval: Identifiable, Equatable {
+    let root: String
+    let directories: [String]
+    var id: String { root }
+}
 
 enum ProjectReadState { case ready, loading, failed }
 
@@ -45,7 +51,13 @@ enum ProjectReadState { case ready, loading, failed }
     @Published var poolPhotos: [Photo] = []
     @Published var poolRawPhotos: [Photo] = []
     @Published var poolBatches: [PoolBatch] = []
+    @Published private(set) var poolDirectories: [String] = []
+    @Published private(set) var removingPool = false
     @Published var showPool = false
+    var poolRemoval: PoolRemoval? {
+        guard page == 1, showPool, !working, !currentProjectOffline, !root.isEmpty, !poolDirectories.isEmpty else { return nil }
+        return PoolRemoval(root: root, directories: poolDirectories)
+    }
     var photos: [Photo] { visiblePhotos(pool: showPool) }
     func visiblePhotos(pool: Bool,scope: String? = nil) -> [Photo] {
         let rows = scopedPhotos(pool: pool, scope: scope)
@@ -239,6 +251,7 @@ enum ProjectReadState { case ready, loading, failed }
         busy = true; projectReadState = .loading; status = "正在读取素材、统计格式并验证配对…"
         focusTracking = false; viewportLabel = "适应窗口"; filmstripDepartures = []; poolSelections = [:]; resetBursts()
         root = URL(fileURLWithPath: path).resolvingSymlinksInPath().path; preview = [:]; activePhotos = []; activeRawPhotos = []; poolPhotos = []; poolRawPhotos = []; poolBatches = []; counts = [:]; sizes = [:]; mediaCount = 0; formats = [:]; history = []; index = 0; departed = []; poolDeparted = []; showPool = false; organized = false; pendingFiles = 0; error = nil; previewTask?.cancel()
+        poolDirectories = []
         Task { await loadLibrary() }
     }
     func request(_ action: String, rootOverride: String? = nil, timeout: TimeInterval? = nil) async throws -> [String: Any] {
@@ -290,6 +303,7 @@ enum ProjectReadState { case ready, loading, failed }
         let lib = try JSONDecoder().decode(Library.self, from: JSONSerialization.data(withJSONObject: object))
         let old = currentPath
         root = lib.root; activePhotos = lib.photos; activeRawPhotos = lib.rawPhotos ?? lib.photos.filter { $0.raw != nil }; poolPhotos = lib.poolPhotos; poolRawPhotos = lib.poolRawPhotos ?? lib.poolPhotos.filter { $0.raw != nil }; poolBatches = lib.poolBatches
+        poolDirectories = lib.poolDirectories ?? []
         removeAssets(departed,pool: false); removeAssets(poolDeparted,pool: true)
         history = lib.history; paired = lib.paired; orphanRaw = lib.orphanRaw; ambiguous = lib.ambiguous
         counts = lib.counts; sizes = lib.sizes; mediaCount = lib.mediaCount; formats = lib.formats; organized = lib.organized; pendingFiles = lib.pending; preview = lib.preview
@@ -338,6 +352,7 @@ enum ProjectReadState { case ready, loading, failed }
         if path == root {
             resetBursts()
             previewTask?.cancel(); root = ""; projectReadState = .ready; activePhotos = []; activeRawPhotos = []; poolPhotos = []; poolRawPhotos = []; poolBatches = []; history = []
+            poolDirectories = []
             counts = [:]; sizes = [:]; mediaCount = 0; formats = [:]; preview = [:]; index = 0; pendingFiles = 0; organized = false
             departed = []; poolDeparted = []; showPool = false; error = nil
             status = "已移除项目记录，素材和恢复日志保留在原文件夹。"
@@ -528,6 +543,8 @@ enum ProjectReadState { case ready, loading, failed }
                 if stage {
                     let batch = try await FileActions.perform { try FileActions.stage(photo, paths: paths, root: projectRoot) }
                     poolBatches.append(batch)
+                    let stagedDirectories = batch.entries.compactMap { FileActions.poolDirectory(for: $0.trash, root: projectRoot) }
+                    poolDirectories = Set(poolDirectories + stagedDirectories).sorted()
                     var staged = photo
                     staged.jpeg = ""; staged.raw = nil
                     for entry in batch.entries {
@@ -572,6 +589,28 @@ enum ProjectReadState { case ready, loading, failed }
         }
     }
     func remove() { reject(stage: false) }
+    func removePool(_ confirmed: PoolRemoval) async {
+        guard poolRemoval == confirmed else {
+            error = "待删池已经变化，请重新确认。"
+            return
+        }
+        busy = true; removingPool = true
+        defer { removingPool = false }
+        let result: Result<Int, Error>
+        do {
+            let log = journal
+            result = .success(try await FileActions.perform {
+                try FileActions.trash(confirmed.directories, journal: log, poolRoot: confirmed.root)
+            })
+        } catch { result = .failure(error) }
+        trash = (try? FileActions.read([[TrashEntry]].self, journal, default: [])) ?? []
+        poolDeparted = []; filmstripDepartures = []
+        await loadLibrary()
+        switch result {
+        case .success(let count): status = "已将 \(count) 个待删池文件夹移入废纸篓 · ⌘Z 撤回"
+        case .failure(let failure): error = failure.localizedDescription
+        }
+    }
     func restore() {
         guard !working, !trash.isEmpty else { return }
         busy = true
@@ -635,6 +674,7 @@ struct ContentView: View {
     @State private var editingProject: Project?
     @State private var editedDate = Date()
     @State private var confirmUndo = false
+    @State private var deletingPool: PoolRemoval?
     var accent: Color { Color(nsColor: FilterPalette.blue.accent(dark: colorScheme == .dark)) }
     var accentInk: Color { FilterPalette.blue.ink(dark: colorScheme == .dark) }
     var body: some View {
@@ -674,6 +714,30 @@ struct ContentView: View {
                     Button("保存") { m.setProjectDate(editedDate, for: project.root); editingProject = nil }.keyboardShortcut(.defaultAction)
                 }
             }.padding(24).frame(minWidth: 350)
+        }
+        .sheet(item: $deletingPool) { plan in
+            VStack(alignment: .leading, spacing: 14) {
+                Text("删除整个待删池？").font(.headline)
+                Text(plan.root).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text("以下 \(plan.directories.count) 个待删池文件夹及其中全部内容会移入系统废纸篓。可用 ⌘Z 撤回。")
+                    .fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 7) {
+                        ForEach(plan.directories, id: \.self) { path in
+                            Label(String(path.dropFirst(plan.root.count + (plan.root.hasSuffix("/") ? 0 : 1))), systemImage: "folder")
+                                .font(.callout).textSelection(.enabled)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(minHeight: 56, idealHeight: 95, maxHeight: 180)
+                HStack {
+                    Spacer()
+                    Button("取消") { deletingPool = nil }.keyboardShortcut(.cancelAction)
+                    Button("移入废纸篓", role: .destructive) {
+                        deletingPool = nil
+                        Task { await m.removePool(plan) }
+                    }
+                }
+            }.padding(24).frame(width: 465)
         }
     }
     var sidebar: some View {
@@ -905,7 +969,9 @@ struct ContentView: View {
                 VStack(spacing: 12) {
                     ZStack {
                         Color(white: colorScheme == .dark ? 0.10 : 0.88)
-                        if m.projectReadState != .ready {
+                        if m.removingPool {
+                            VStack(spacing: 12) { ProgressView(); Text("正在删除待删池…").font(.headline) }
+                        } else if m.projectReadState != .ready {
                             projectReadPlaceholder
                         } else if let p = m.current {
                             ImageCanvas(path: m.displayPath(p),raw: m.viewingRAW ? nil : p.raw,focusTracking: m.focusTracking,showsFocusBox: m.showsFocusBox,onMessage: { m.status = $0 },onFocusTrackingChange: { if m.focusTracking != $0 { m.focusTracking = $0 } },onViewportChange: { if m.viewportLabel != $0 { m.viewportLabel = $0 } })
@@ -977,6 +1043,13 @@ struct ContentView: View {
                 }
             }
             Spacer(minLength: 0)
+            if m.showPool {
+                Button { deletingPool = m.poolRemoval } label: {
+                    Label("删除整个待删池", systemImage: "trash")
+                        .foregroundStyle(FilterPalette.red.ink(dark: colorScheme == .dark))
+                }.buttonStyle(.glass).disabled(m.poolRemoval == nil)
+                    .help("移入当前项目的所有待删池文件夹 · 需要确认")
+            }
             HStack(spacing: 2) {
                 Button { m.step(-1) } label: { Image(systemName: "chevron.left") }.disabled(m.index == 0)
                 Text("\(m.photos.isEmpty ? 0 : m.index+1) / \(m.photos.count)").font(.system(size: 11,design: .monospaced)).monospacedDigit().frame(minWidth: 58)
@@ -1062,7 +1135,8 @@ struct ContentView: View {
     func installKeys() {
         guard m.keyMonitor == nil else { return }
         m.keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard NSApp.keyWindow != nil, NSApp.modalWindow == nil, NSApp.keyWindow?.attachedSheet == nil, !(NSApp.keyWindow?.firstResponder is NSTextView) else { return event }
+            guard NSApp.keyWindow != nil, NSApp.modalWindow == nil, NSApp.keyWindow?.attachedSheet == nil,
+                  NSApp.keyWindow?.sheetParent == nil, !(NSApp.keyWindow?.firstResponder is NSTextView) else { return event }
             return m.handleKey(event.keyCode, modifiers: event.modifierFlags, characters: event.charactersIgnoringModifiers) ? nil : event
         }
     }

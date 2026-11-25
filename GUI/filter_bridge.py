@@ -10,7 +10,9 @@ def scan(root, mode="normal", rules=None, travel=False):
     root = root.resolve()
     # The selected directory is the project boundary. Pair discovery must never
     # silently broaden the scan or change the root used for subsequent moves.
-    files = sorted((p for p in core.iter_files_recursive(root, set()) if p.is_file() and not p.is_symlink()), key=lambda p: str(p).lower())
+    shadow_roots = set()
+    files = sorted((p for p in core.iter_files_recursive(root, set(), shadow_roots=shadow_roots)
+                    if p.is_file() and not p.is_symlink()), key=lambda p: str(p).lower())
     file_set = set(files)
     jpgs = [p for p in files if p.suffix.lower() in core.JPEG_EXT]
     raws = [p for p in files if p.suffix.lower() in core.RAW_PHOTO_EXT]
@@ -154,7 +156,13 @@ def scan(root, mode="normal", rules=None, travel=False):
     # Completion is independent of which custom rules are currently selected.
     pending = sum(core.classify_file(p) != 'OTHER' for p in core.collect_candidates(root))
     organized = has_moves and pending == 0
-    return {'root': str(root), 'pending': pending, 'photos': active, 'rawPhotos': active_raw, 'poolPhotos': pool, 'poolRawPhotos': pool_raw, 'poolBatches': batches, 'counts': counts, 'formats': formats, 'sizes': sizes, 'mediaCount': media_count, 'organized': organized, 'preview': preview, 'paired': sum(p['raw'] is not None for p in active), 'orphanRaw': sum(not p['jpeg'] for p in active_raw), 'ambiguous': sum(p['status']=='配对歧义' for p in active), 'history': history}
+    visible_batches = []
+    for batch in batches:
+        entries = [entry for entry in batch['entries']
+                   if (staged := Path(entry['trash'])) in file_set and shadow(staged)]
+        if entries:
+            visible_batches.append({**batch, 'entries': entries})
+    return {'root': str(root), 'pending': pending, 'photos': active, 'rawPhotos': active_raw, 'poolPhotos': pool, 'poolRawPhotos': pool_raw, 'poolBatches': visible_batches, 'poolDirectories': sorted(map(str, shadow_roots)), 'counts': counts, 'formats': formats, 'sizes': sizes, 'mediaCount': media_count, 'organized': organized, 'preview': preview, 'paired': sum(p['raw'] is not None for p in active), 'orphanRaw': sum(not p['jpeg'] for p in active_raw), 'ambiguous': sum(p['status']=='配对歧义' for p in active), 'history': history}
 
 
 def emit(data):
