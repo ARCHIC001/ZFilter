@@ -4,7 +4,7 @@ Windows 前端与 macOS 应用共用整理、日志、统计和 JPEG／RAW 配�
 
 ## 运行预览包
 
-Windows 11 x64 下，从 [测试运行记录](https://github.com/ARCHIC001/ZFilter/actions/workflows/windows-preview.yml?query=branch%3Awindows-preview) 下载 `ZFilter-Windows-x64-preview` 工件，解开外层工件 ZIP 后，再解开便携版 ZIP。运行其中的 `ZFilter.exe`，并保留同目录的 `_internal`。预览包未做代码签名。
+在 Windows 11 x64 上，下载并解压 ZIP，运行 `ZFilter` 文件夹里的 `ZFilter.exe`，保留同目录的 `_internal`。预览包未做代码签名。 [下载 Windows 便携版](https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-Windows-x64-preview.zip) · [发布说明与 SHA-256 校验](https://github.com/ARCHIC001/ZFilter/releases/tag/v1.9.8)
 
 ## 操作
 
