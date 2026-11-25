@@ -2,7 +2,7 @@
   <img src="docs/images/zfilter-icon.png" width="104" alt="ZFilter 应用图标">
   <h1>ZFilter</h1>
   <p>整理 JPEG、RAW 与视频，在同一个项目里对照配对照片、查看拍摄信息并选片。</p>
-  <p><strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-1.9.8-macOS-arm64.dmg">下载 macOS 安装包</a></strong> · <strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-Windows-x64-preview.zip">下载 Windows 便携版</a></strong></p>
+  <p><strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-1.9.8-macOS-arm64.dmg">下载 macOS 安装包</a></strong> · <strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-1.9.9-Windows-x64-preview.zip">下载 Windows 便携版</a></strong></p>
   <p>macOS 26+ · Apple Silicon　|　Windows 11 x64 · 预览版</p>
   <p><a href="https://github.com/ARCHIC001/ZFilter/releases/tag/v1.9.8">版本说明与校验文件</a> · <a href="docs/tutorial.md">图文使用教程</a> · <a href="docs/cli.md">命令行指南</a></p>
 </div>
@@ -33,7 +33,7 @@ ZFilter 以一个素材文件夹为项目，递归清点文件、验证 JPEG／R
 
 ### Windows 11 x64 · 预览版
 
-1. 下载并解压 [ZFilter-Windows-x64-preview.zip](https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-Windows-x64-preview.zip)。
+1. 下载并解压 [ZFilter-1.9.9-Windows-x64-preview.zip](https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-1.9.9-Windows-x64-preview.zip)。
 2. 打开解压后的 `ZFilter` 文件夹，运行 `ZFilter.exe`，保留同目录的 `_internal`。发布页提供 Windows 包的 SHA-256 校验文件。 [Windows 操作指南](https://github.com/ARCHIC001/ZFilter/blob/windows-preview/docs/windows.md)
 
 ## 快速上手
