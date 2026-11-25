@@ -88,6 +88,10 @@ def move_without_overwrite(source, target):
     target.parent.mkdir(parents=True, exist_ok=True)
     if os.name == 'nt':
         source.rename(target)  # Windows rename fails atomically if target exists.
+    elif source.is_dir():
+        if target.exists() or target.is_symlink():
+            raise FileExistsError(target)
+        source.rename(target)
     else:
         os.link(source, target)
         try:
@@ -116,8 +120,8 @@ def shadow_destination(root, path, raw):
     return root / (('DRaw' if raw else 'DJpg')+root.name) / relative
 
 
-def unique_destination(path):
-    if path.exists() or path.is_symlink():
+def unique_destination(path, reserved=()):
+    if path in reserved or path.exists() or path.is_symlink():
         return path.with_name(f'{path.stem}.{uuid4().hex}{path.suffix}')
     return path
 
@@ -148,16 +152,20 @@ def record_then_move(journal, batches, batch, entries):
 
 def stage(root, photo, paths):
     journal = inside(root, pool_journal(root))
+    batches = read_journal(journal)
+    reserved = {Path(entry['trash']) for batch in batches for entry in batch['entries']}
     entries = []
     for path in paths:
         original = inside(root, path)
         if not original.is_file():
             raise FileNotFoundError(original)
-        target = inside(root, unique_destination(shadow_destination(root, original, str(original) == photo.get('raw'))))
+        destination = shadow_destination(root, original, str(original) == photo.get('raw'))
+        target = inside(root, unique_destination(destination, reserved))
+        reserved.add(target)
         entries.append({'original': str(original), 'trash': str(target)})
     if entries:
         batch = {'id': uuid4().hex, 'photo': photo, 'entries': entries}
-        record_then_move(journal, read_journal(journal), batch, entries)
+        record_then_move(journal, batches, batch, entries)
 
 
 def restore_pool(root, paths=(), all_batches=False):
@@ -168,7 +176,7 @@ def restore_pool(root, paths=(), all_batches=False):
     for batch in batches:
         for entry in batch['entries']:
             source = inside(root, entry['trash'])
-            if all_batches or source in requested:
+            if source in requested or (all_batches and source.is_file()):
                 selected[source] = inside(root, entry['original'])
     for source in requested.difference(selected):
         parts = list(source.relative_to(root).parts)
@@ -184,14 +192,20 @@ def restore_pool(root, paths=(), all_batches=False):
         write_journal(journal, [batch for batch in batches if batch['entries']])
 
 
-def recycle(root, paths, journal):
+def recycle(root, paths, journal, *, directories=False):
     # Same-volume recovery between launches. Keep all moved bytes under the project
     # so an external disk can be detached without leaving media on the system drive.
     target_dir = root / core.LOG_DIR_NAME / 'recycle' / uuid4().hex
     entries = []
     for path in paths:
         original = inside(root, path)
-        if not original.is_file():
+        if directories:
+            parents = [Path(part) for part in original.relative_to(root).parts[:-1]]
+            if (Path(path) != original or not original.is_dir() or not core.is_shadow_directory(original)
+                    or getattr(original, 'is_junction', lambda: False)()
+                    or any(core.is_hidden(p) or core.is_shadow_directory(p) for p in parents)):
+                raise ValueError(f'待删池目录已经变化，请刷新后重试：{path}')
+        elif not original.is_file():
             raise FileNotFoundError(original)
         target = inside(root, unique_destination(target_dir / uuid4().hex / original.name))
         entries.append({'original': str(original), 'trash': str(target), 'root': str(root)})
@@ -206,7 +220,7 @@ def restore_entries(selected):
         if source.exists():
             if target.exists() or target.is_symlink():
                 raise FileExistsError(f'原路径已有文件，恢复已停止：{target}')
-        elif not target.is_file():
+        elif not target.exists():
             raise FileNotFoundError(f'找不到可恢复的文件：{source}')
     for source, target in selected.items():
         if source.exists():

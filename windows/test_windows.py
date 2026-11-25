@@ -8,10 +8,10 @@ from tempfile import TemporaryDirectory
 from time import monotonic, sleep
 
 from PIL import Image
-from PySide6.QtCore import QPoint, QSettings, QSize, Qt
+from PySide6.QtCore import QPoint, QSettings, QSize, QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QToolButton
+from PySide6.QtWidgets import QApplication, QMessageBox, QToolButton
 
 from windows.app import Window
 from windows import media, operations as ops
@@ -29,6 +29,29 @@ def wait_for(predicate, name, seconds=20):
 def digest(path):
     with path.open('rb') as image:
         return hashlib.file_digest(image,'sha256').hexdigest()
+
+
+def answer_pool_confirmation(ui, confirm):
+    expected = '\n'.join(str(Path(path).relative_to(ui.root)) for path in ui.library['poolDirectories'])
+    seen = []
+
+    def respond():
+        dialog = QApplication.activeModalWidget()
+        if not isinstance(dialog,QMessageBox):
+            if dialog:
+                dialog.reject()
+            return
+        seen.append(dialog.detailedText())
+        if confirm:
+            move = next((b for b in dialog.buttons() if dialog.buttonRole(b) == QMessageBox.ButtonRole.DestructiveRole),None)
+            if move:
+                move.click()
+                return
+        QTest.keyClick(dialog,Qt.Key.Key_Escape)
+
+    QTimer.singleShot(0,respond)
+    ui.pool_delete_button.click()
+    assert seen == [expected]
 
 
 def test_workflow(base, raw, screenshot):
@@ -85,6 +108,7 @@ def test_workflow(base, raw, screenshot):
 
         ui.nav[1].click()
         assert ui.pages.currentIndex() == 1
+        assert not ui.pool_delete_button.isVisible()
         wait_for(lambda: ui.frame is not None,'paired JPEG decode')
         assert ui.path.endswith('照片01.JPG') and len(ui.photos) == 1
         ui.info_toggle.click()
@@ -130,6 +154,31 @@ def test_workflow(base, raw, screenshot):
         assert ops.read_journal(ui.journal)
         ui.restore_delete()
         wait_for(lambda: not ui.busy and len(ui.library['poolPhotos'])==1,'Ctrl+Z restores to pending pool')
+
+        extra = project/'待复核'/'DJpg只有附属文件'
+        extra.mkdir(parents=True)
+        sidecar = extra/'notes.xmp'
+        sidecar.write_bytes(b'review notes')
+        ui.rescan()
+        wait_for(lambda: not ui.busy and len(ui.library['poolDirectories'])==3,'inventory of complete pending pool')
+        ui.scope_buttons[0].click()
+        folders = tuple(map(Path,ui.library['poolDirectories']))
+        assert ui.pool_delete_button.isVisible() and ui.pool_delete_button.isEnabled()
+        assert ui.pool_delete_button.iconSize() == QSize(18,18) and not ui.pool_delete_button.icon().isNull()
+        answer_pool_confirmation(ui,False)
+        assert all(folder.is_dir() for folder in folders) and not ops.read_journal(ui.journal)
+        answer_pool_confirmation(ui,True)
+        wait_for(lambda: not ui.busy and not ui.library['poolDirectories'],'confirmed whole-pool removal')
+        assert ui.pool and not ui.pool_delete_button.isEnabled() and not ui.library['poolBatches']
+        assert not any(folder.exists() for folder in folders)
+        assert len(ops.read_journal(ui.journal)) == 1 and len(ops.read_journal(ui.journal)[0]) == 3
+        assert len(ui.library['photos']) == 1 and ui.library['counts']['video'] == 1
+        ui.restore_delete()
+        wait_for(lambda: not ui.busy and len(ui.library['poolDirectories'])==3,'Ctrl+Z restores all pending folders')
+        assert sidecar.read_bytes() == b'review notes' and ui.library['poolBatches']
+        assert all(folder.is_dir() for folder in folders) and not ops.read_journal(ui.journal)
+        print('PASS: Windows whole-pool confirmation/cancellation, all scopes, sidecar recovery and grouped Ctrl+Z')
+        ui.scope_buttons[2].click()
         ui.w_button.click()
         wait_for(lambda: not ui.busy and not ui.library['poolPhotos'],'W restores pair to formal pool')
         assert all(Path(path).exists() for path in active)

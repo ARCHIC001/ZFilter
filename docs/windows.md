@@ -20,6 +20,8 @@ Windows 11 x64 下，从 [测试运行记录](https://github.com/ARCHIC001/ZFilt
 
 左下角绿、黄、红三个按钮分别控制仅 JPEG、仅 RAW、已配对的 JPEG+RAW。拖动快速定位轨，松手后跳到目标照片。左上角 Logo 切换深浅色。
 
+在待删池界面，点击底部「删除整个待删池」，可在确认框中展开目录清单。确认后，当前项目的全部待删池文件夹及其中内容会移入 ZFilter 废纸篓，按 **Ctrl+Z** 可整批恢复。
+
 ## 和 macOS 版的差异
 
 - Windows 通过 LibRaw 显影 RAW。无损 NEF 用标准 LibRaw，Nikon 高效率 NEF 用打包内的 HE 解码组件。RAW 大图从传感器数据生成。Windows 与 macOS 使用不同的显影引擎，色彩与有效画幅边缘可能有差异。 [LibRaw 相机支持](https://www.libraw.org/supported-cameras) · [HE 解码组件源码](https://github.com/zidage/LibRaw/tree/fca3ee4db0b51f3787534fc370891e93ceb52f59)

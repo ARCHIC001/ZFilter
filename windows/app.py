@@ -448,6 +448,10 @@ class Window(QMainWindow):
             footer.addWidget(toggle)
             self.scope_buttons.append(toggle)
         footer.addStretch()
+        self.pool_delete_button = button('删除整个待删池',self.confirm_remove_pool,glyph='delete')
+        self.pool_delete_button.setObjectName('bulkTrash')
+        self.pool_delete_button.hide()
+        footer.addWidget(self.pool_delete_button)
         self.step_label = label('0 / 0','muted')
         footer.addWidget(button('',partial(self.step,-1),'上一张 · A / ←',compact=True,glyph='previous'))
         footer.addWidget(self.step_label)
@@ -564,6 +568,7 @@ class Window(QMainWindow):
         a,b,c,d,e,f,g = (('#10151e','#181f2a','#222c3a','#354154','#edf2fa','#a7b7cc','#6ca9ff') if self.dark
                           else ('#edf2f8','#f9fbfe','#e9eff7','#cbd5e4','#192638','#53637c','#1859ad'))
         active_tool = '#344054' if self.dark else '#dce6f3'
+        destructive = '#ff9b96' if self.dark else '#af2720'
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Text,QColor(e))
         palette.setColor(QPalette.ColorRole.WindowText,QColor(e))
@@ -582,6 +587,8 @@ class Window(QMainWindow):
             QPushButton:hover,QToolButton:hover {{border-color:{g};}}
             QPushButton:checked,QToolButton:checked {{border-color:{g};color:{g};}}
             QPushButton:disabled,QToolButton:disabled {{color:{f};}}
+            QPushButton#bulkTrash:enabled {{color:{destructive};}}
+            QPushButton#bulkTrash:hover:enabled {{border-color:{destructive};}}
             QPushButton#brand {{background:transparent;border-color:transparent;text-align:left;font-size:20px;font-weight:700;padding:4px;}}
             QPushButton#brand:hover {{background:{c};}}
             QPushButton#nav {{text-align:left;min-height:20px;background:transparent;border-color:transparent;}}
@@ -1136,6 +1143,8 @@ class Window(QMainWindow):
         self.w_button.setAccessibleName(stage_action)
         self.w_button.setEnabled(bool(self.photo) and not self.busy)
         self.s_button.setEnabled(bool(self.photo) and not self.busy)
+        self.pool_delete_button.setVisible(self.pool)
+        self.pool_delete_button.setEnabled(bool(self.pool_deletion_plan()))
         self.burst_toggle.setChecked(self.fold_all)
         self.burst_toggle.setEnabled(not self.bursts_scanning and bool(self.library))
         self.step_label.setText(f'{self.index+1 if self.photos else 0} / {len(self.photos)}')
@@ -1324,6 +1333,41 @@ class Window(QMainWindow):
 
         self.begin_io('正在处理照片…',work,done)
 
+    def pool_deletion_plan(self):
+        if (self.pages.currentIndex() != 1 or not self.pool or self.busy or not self.root
+                or not self.library or self.presence.get(str(self.root)) is False):
+            return None
+        directories = tuple(self.library['poolDirectories'])
+        return (self.root,directories) if directories else None
+
+    def confirm_remove_pool(self):
+        if not (plan := self.pool_deletion_plan()):
+            return
+        root,directories = plan
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle('删除整个待删池？')
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setText(f'将 {len(directories)} 个待删池文件夹及其中全部内容移入 ZFilter 废纸篓？')
+        dialog.setInformativeText(f'当前项目：{root}\n可以按 Ctrl+Z 撤回。')
+        dialog.setDetailedText('\n'.join(str(Path(path).relative_to(root)) for path in directories))
+        cancel = dialog.addButton(QMessageBox.StandardButton.Cancel)
+        cancel.setText('取消')
+        move = dialog.addButton('移入 ZFilter 废纸篓',QMessageBox.ButtonRole.DestructiveRole)
+        dialog.setDefaultButton(cancel)
+        dialog.setEscapeButton(cancel)
+        dialog.exec()
+        confirmed = dialog.clickedButton() is move
+        dialog.deleteLater()
+        if not confirmed:
+            return
+        if self.pool_deletion_plan() != plan:
+            self.report('待删池已经变化，请重新确认。')
+            return
+        self.mutate_and_scan(lambda current:ops.recycle(current,directories,self.journal,directories=True),
+                             f'已移入 {len(directories)} 个待删池文件夹 · Ctrl+Z 可撤回',
+                             description='正在删除待删池…',rescan_on_error=True)
+
     def restore_all_pool(self):
         if self.root and self.library and self.library['poolBatches']:
             self.mutate_and_scan(lambda root:ops.restore_pool(root,all_batches=True),'已恢复待删文件')
@@ -1332,7 +1376,7 @@ class Window(QMainWindow):
         if self.journal.exists():
             self.mutate_and_scan(lambda root:ops.restore_recycle(self.journal),'已撤回删除')
 
-    def mutate_and_scan(self,mutation,summary):
+    def mutate_and_scan(self,mutation,summary,description='正在恢复文件…',rescan_on_error=False):
         root = self.root
         mode,rules,travel = self.options
 
@@ -1344,13 +1388,15 @@ class Window(QMainWindow):
         def done(result,error):
             if error:
                 self.report(error)
+                if rescan_on_error:
+                    self.rescan()
             else:
                 if result[0]:
                     self.bursts_scanned = False
                     self.apply_library(result[0])
                 self.report(summary)
 
-        self.begin_io('正在恢复文件…',work,done)
+        self.begin_io(description,work,done)
 
     def closeEvent(self, event):
         if self.busy:
