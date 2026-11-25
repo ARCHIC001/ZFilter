@@ -418,7 +418,8 @@ def is_shadow_directory(path: Path) -> bool:
     return path.name.startswith(("DJpg", "DRaw", "DJpeg", "DJPEG"))
 
 
-def iter_files_recursive(root: Path, excluded_dirs: Set[Path], include_shadow: bool = True) -> Iterable[Path]:
+def iter_files_recursive(root: Path, excluded_dirs: Set[Path], include_shadow: bool = True,
+                         shadow_roots: Optional[Set[Path]] = None) -> Iterable[Path]:
     def scan_error(error):
         raise error
 
@@ -428,12 +429,17 @@ def iter_files_recursive(root: Path, excluded_dirs: Set[Path], include_shadow: b
         pruned: List[str] = []
         for d in dirs:
             dpath = cur / d
+            if dpath.is_symlink() or (sys.platform == 'win32' and getattr(dpath, 'is_junction', lambda: False)()):
+                continue
             if not include_shadow and is_shadow_directory(dpath):
                 continue
             if is_hidden(dpath):
                 continue
             if any(dpath == ex or ex in dpath.parents for ex in excluded_dirs):
                 continue
+            if (shadow_roots is not None and is_shadow_directory(dpath)
+                    and not any(parent in shadow_roots for parent in dpath.parents)):
+                shadow_roots.add(dpath)
             pruned.append(d)
         dirs[:] = pruned
 

@@ -23,7 +23,7 @@ ZFilter 以一个素材文件夹为项目，递归清点文件、验证 JPEG／R
 
 ## 安装
 
-1. 在 [GitHub Releases](https://github.com/ARCHIC001/ZFilter/releases/latest) 下载 `ZFilter-1.9.7-macOS-arm64.dmg`。
+1. 在 [GitHub Releases](https://github.com/ARCHIC001/ZFilter/releases/latest) 下载 `ZFilter-1.9.8-macOS-arm64.dmg`。
 2. 打开磁盘映像，将 **ZFilter.app** 拖到 **Applications**。已有旧版时，先退出运行中的 ZFilter。
 3. 从「应用程序」打开 ZFilter。整理引擎使用 `/usr/bin/python3`，如果系统提示缺少命令行工具，按提示安装，或在终端运行 `xcode-select --install`。 [Apple 命令行工具安装说明](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
 4. 当前下载包使用 ad-hoc 签名，首次打开时 macOS 可能要求确认。安装前可对照发布页的 SHA-256，按 Apple 的说明处理首次启动提示。 [校验与首次启动](docs/tutorial.md#安装和首次启动) · [Apple 安全打开指南](https://support.apple.com/zh-cn/102445)

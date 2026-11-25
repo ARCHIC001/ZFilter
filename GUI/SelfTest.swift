@@ -174,6 +174,41 @@ import ImageIO
         model.toggleSidebar()
         try check(Model(preferences: preferences).collapsed == model.collapsed, "icon sidebar preference")
         try check(model.activePhotos.count == 7 && model.poolBatches.isEmpty && model.trash.isEmpty, "all restored")
+        let activePair = model.current!
+        model.handleKey(13); try await settle(model)
+        let originalPoolPhoto = model.poolPhotos.first!
+        try check(model.poolRemoval == nil && model.poolDirectories.count == 2, "whole-pool action belongs to the pool and sees newly staged folders")
+        let emptyPool = flow.appendingPathComponent("卡片/DRaw空目录")
+        let unrelated = flow.appendingPathComponent("Drawings")
+        try fm.createDirectory(at: emptyPool, withIntermediateDirectories: true)
+        try fm.createDirectory(at: unrelated, withIntermediateDirectories: false)
+        let nestedPool = flow.appendingPathComponent("卡片/DRaw空目录/DJpg内层")
+        try fm.createDirectory(at: nestedPool, withIntermediateDirectories: false)
+        let sidecar = nestedPool.appendingPathComponent("保留.xmp")
+        try Data("sidecar".utf8).write(to: sidecar)
+        try fm.createSymbolicLink(at: flow.appendingPathComponent("DJpg外部链接"), withDestinationURL: unrelated)
+        model.switchPool(true); model.deleteMode = "仅 JPEG"; await model.scan()
+        let plan = model.poolRemoval!
+        try check(plan.directories.count == 3 && plan.directories.contains(canonical(emptyPool)), "inventory includes unpaired and sidecar-only pool roots once, and excludes symbolic links")
+        let invalid = PoolRemoval(root: plan.root, directories: plan.directories + [canonical(unrelated)])
+        await model.removePool(invalid)
+        try check(model.error != nil && plan.directories.allSatisfy { fm.fileExists(atPath: $0) }, "changed confirmation is rejected before moving any folder")
+        model.error = nil
+        var blockedFormal = false
+        do { _ = try FileActions.trash(invalid.directories, journal: model.journal, poolRoot: plan.root) }
+        catch { blockedFormal = true }
+        try check(blockedFormal && plan.directories.allSatisfy { fm.fileExists(atPath: $0) }, "filesystem validation rejects formal paths before moving any folder")
+        await model.removePool(plan)
+        try check(model.error == nil && model.poolDirectories.isEmpty && model.poolBatches.isEmpty && model.showPool, "successful bulk delete refreshes this pool with no stale batches")
+        try check(plan.directories.allSatisfy { !fm.fileExists(atPath: $0) } && fm.fileExists(atPath: unrelated.path), "all confirmed directories leave project; unrelated folders remain")
+        try check(model.trash.count == 1 && model.trash.last?.count == 3, "bulk delete records a single undo group")
+        model.restore(); try await settle(model)
+        try check(model.poolDirectories == plan.directories && model.poolBatches.count == 1 && model.trash.isEmpty, "Cmd-Z restores directories and recorded pair together")
+        let restoredSidecar = try Data(contentsOf: sidecar)
+        try check(restoredSidecar == Data("sidecar".utf8) && fm.fileExists(atPath: originalPoolPhoto.jpeg), "undo restores sidecars and staged JPEG bytes")
+        model.returnFromPool(all: true); try await settle(model)
+        try check(fm.fileExists(atPath: activePair.jpeg) && fm.fileExists(atPath: activePair.raw!), "restored pool still resolves the original formal pair")
+        print("PASS macOS whole-pool confirmation snapshot, all scopes, nested directories, symlink exclusion, and bulk Cmd-Z")
         print(String(format: "PASS project/WASD: loading, auto inventory, organize, persistent projects, context, A/D, W/S immediate advance %.3f ms, pool review/restore, RAW-only, Cmd-Z, sidebar", rejectTime))
         let selectedParent = temp.appendingPathComponent("scope-parent")
         let selectedChild = selectedParent.appendingPathComponent("selected-child")
