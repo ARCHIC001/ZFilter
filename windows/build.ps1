@@ -8,13 +8,13 @@ $iconPng = (Resolve-Path 'docs/images/zfilter-icon.png').Path
 $codec = Join-Path $PWD 'build/windows-codec/Release'
 if (-not (Test-Path (Join-Path $codec 'zfilter-raw.exe'))) { & "$PSScriptRoot/build-codec.ps1" }
 New-Item -ItemType Directory -Force $work, $out | Out-Null
-python -c "from PIL import Image; Image.open('docs/images/zfilter-icon.png').save(r'$icon',sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+python -c 'from PIL import Image; import sys; Image.open(sys.argv[1]).save(sys.argv[2], sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])' $iconPng $icon
 if ($LASTEXITCODE) { throw 'ICO generation failed' }
 
 python -m PyInstaller --noconfirm --clean --windowed --onedir --name ZFilter --paths . `
     --specpath $work --workpath $work --distpath $out --icon $icon `
     --add-data "${iconPng}:docs/images" --collect-all rawpy `
-    --add-binary "$codec/zfilter-raw.exe:rawcodec" --add-binary "$codec/zfilter-libraw.dll:rawcodec" `
+    --add-binary "$codec/zfilter-raw.exe:rawcodec" `
     --add-data "$codec/LICENSE.LGPL:rawcodec" --add-data "$codec/LICENSE.CDDL:rawcodec" `
     --add-data "$codec/COPYRIGHT:rawcodec" --add-data "$codec/SOURCE.txt:rawcodec" `
     --copy-metadata PySide6-Essentials --copy-metadata shiboken6 --copy-metadata rawpy `

@@ -250,14 +250,14 @@ def decode_nikon_he(path, thumbnail=False):
         folder = Path(directory)
         # Pass ASCII basenames to the decoder even when the user path is Unicode.
         shutil.copyfile(path, folder/'source.NEF')
-        argv = [str(helper),'-w','-o','1','-T','-Z','decoded.tiff']
+        argv = [str(helper),'source.NEF','decoded.tiff']
         if thumbnail:
-            argv.append('-h')
-        result = subprocess.run([*argv,'source.NEF'],cwd=folder,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+            argv.append('half')
+        result = subprocess.run(argv,cwd=folder,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                                 timeout=90,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         decoded = folder/'decoded.tiff'
         if result.returncode or not decoded.is_file():
-            message = result.stderr.decode('utf-8',errors='replace').strip()
+            message = result.stderr.decode('utf-8',errors='replace').strip() or f'解码器退出码 0x{result.returncode & 0xffffffff:08x}'
             raise RuntimeError('无法显影此 NEF。'+(f' {message[-280:]}' if message else ''))
         with Image.open(decoded) as image:
             return image.convert('RGB')
