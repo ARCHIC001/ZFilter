@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Darwin
 
 func isShadowName(_ name: String) -> Bool { ["DJpg", "DRaw", "DJpeg", "DJPEG"].contains { name.hasPrefix($0) } }
 
@@ -187,10 +188,12 @@ enum FileActions {
             let url = URL(fileURLWithPath: path, isDirectory: true)
             let properties = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard poolDirectory(for: path, root: root) == path,
-                  url.standardizedFileURL.path == path, url.resolvingSymlinksInPath().path == path,
-                  properties.isDirectory == true, properties.isSymbolicLink != true else {
+                  properties.isDirectory == true, properties.isSymbolicLink != true,
+                  let resolved = realpath(path, nil) else {
                 throw failure("待删池目录已经变化，请刷新后重试：\(path)")
             }
+            defer { free(resolved) }
+            guard String(cString: resolved) == path else { throw failure("待删池目录已经变化，请刷新后重试：\(path)") }
         }
         if let poolRoot {
             for path in paths { try validatePoolDirectory(path, root: poolRoot) }
