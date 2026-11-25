@@ -1260,6 +1260,10 @@ class Window(QMainWindow):
             rect.translate(tile.mapTo(self.departure.parentWidget(),tile.rect().topLeft()))
             self.departure.play(tile.image,rect,not stage)
 
+        previous = self.library
+        self.library = ops.without_paths(previous,set(paths),pool)
+        self.rebuild_album(preferred)
+
         def work():
             if not stage:
                 ops.recycle(root,paths,self.journal)
@@ -1271,11 +1275,13 @@ class Window(QMainWindow):
 
         def done(library,error):
             if error:
+                self.library = previous
+                self.rebuild_album(photo)
                 self.report(error)
                 self.rescan()
                 return
             self.bursts_scanned = False
-            self.apply_library(library,preferred)
+            self.apply_library(library,self.photo or preferred)
             self.report('已移入 ZFilter 废纸篓 · Ctrl+Z 可撤回' if not stage else '已恢复到正式池' if pool else '已移入待删池')
 
         self.begin_io('正在处理照片…',work,done)

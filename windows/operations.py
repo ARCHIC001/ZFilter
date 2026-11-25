@@ -36,6 +36,25 @@ def selected_paths(photo, scope):
     return [path] if path else []
 
 
+def without_paths(library, paths, pool):
+    """Preview the removal while the filesystem worker commits and rescans."""
+    result = dict(library)
+    for key, display in (('poolPhotos' if pool else 'photos','jpeg'),
+                         ('poolRawPhotos' if pool else 'rawPhotos','raw')):
+        rows = []
+        for photo in library[key]:
+            if photo[display] in paths:
+                continue
+            jpeg = '' if photo['jpeg'] in paths else photo['jpeg']
+            raw = None if photo['raw'] in paths else photo['raw']
+            if jpeg != photo['jpeg'] or raw != photo['raw']:
+                photo = {**photo, 'jpeg': jpeg, 'raw': raw,
+                         'status': '仅 RAW' if not jpeg else '仅 JPEG', 'source': ''}
+            rows.append(photo)
+        result[key] = rows
+    return result
+
+
 def organize(root, mode, rules, travel, dry, progress=None):
     result, _, _ = core.organize_folder(root, mode, set(rules), dry_run=dry,
                                         verbose=False, travel_mode=travel, progress_callback=progress)

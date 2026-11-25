@@ -2,9 +2,10 @@
 import argparse
 import hashlib
 import shutil
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from time import monotonic
+from time import monotonic, sleep
 
 from PIL import Image
 from PySide6.QtCore import QPoint, QSettings, Qt
@@ -21,7 +22,8 @@ def wait_for(predicate, name, seconds=20):
     while not predicate():
         if monotonic() > end:
             raise AssertionError('Timed out: '+name)
-        QTest.qWait(15)
+        QApplication.processEvents()
+        sleep(.015)
 
 
 def digest(path):
@@ -32,7 +34,7 @@ def digest(path):
 def test_workflow(base, raw, screenshot):
     app = QApplication.instance() or QApplication([])
     app.setStyle('Fusion')
-    app.setFont(QFont('Microsoft YaHei UI' if __import__('sys').platform=='win32' else 'PingFang SC',10))
+    app.setFont(QFont('Microsoft YaHei UI' if sys.platform=='win32' else 'PingFang SC',10))
     project = base / '外置盘模拟' / '影像项目'
     card = project / '存储卡'
     card.mkdir(parents=True)
@@ -102,12 +104,14 @@ def test_workflow(base, raw, screenshot):
         ui.scope_buttons[1].click()
         assert ui.scope == 1 and len(ui.photos) == 1
         if raw:
-            wait_for(lambda: ui.frame is not None and ui.frame.image.width()>2000,'full RAW LibRaw decode',40)
+            wait_for(lambda: ui.frame is not None or ui.placeholder.text().startswith('无法解码'),'full RAW LibRaw decode',45)
+            assert ui.frame is not None, ui.statusBar().currentMessage()
             assert ui.path.endswith('.NEF') and ui.frame.image.height()>2000
         ui.scope_buttons[2].click()
         wait_for(lambda: ui.frame is not None,'return to paired JPEG')
         active = tuple(ops.selected_paths(ui.photo,ui.scope_name))
         ui.w_button.click()
+        assert not ui.photos, 'the parked frame leaves the viewer immediately'
         wait_for(lambda: not ui.busy and len(ui.library['poolPhotos'])==1,'W stage')
         assert not any(Path(path).exists() for path in active)
         ui.pool_buttons[1].click()
