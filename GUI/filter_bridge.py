@@ -23,7 +23,7 @@ def scan(root, mode="normal", rules=None, travel=False):
             if log.name in {'latest.json', 'pool.json'}:
                 continue
             try:
-                data = json.loads(log.read_text())
+                data = json.loads(log.read_text(encoding='utf-8'))
                 if not isinstance(data, dict):
                     continue
                 groups = {}
@@ -41,7 +41,7 @@ def scan(root, mode="normal", rules=None, travel=False):
             except (ValueError, KeyError, OSError):
                 continue
     pool_path = logs / 'pool.json'
-    batches = json.loads(pool_path.read_text()) if pool_path.exists() else []
+    batches = json.loads(pool_path.read_text(encoding='utf-8')) if pool_path.exists() else []
     for batch in batches:
         if batch['photo'].get('jpeg'): batch['photo']['jpeg'] = str(Path(batch['photo']['jpeg']).resolve())
         if batch['photo'].get('raw'): batch['photo']['raw'] = str(Path(batch['photo']['raw']).resolve())
@@ -51,10 +51,12 @@ def scan(root, mode="normal", rules=None, travel=False):
     def mapped(path, batch):
         if not path: return None
         for e in batch['entries']:
-            if e['original'] == path and Path(e['trash']).is_file():
-                return Path(e['trash'])
+            staged = Path(e['trash'])
+            if e['original'] == path and staged.is_relative_to(root) and staged.is_file():
+                return staged
         original = Path(path)
-        return original if original.is_file() else moved_paths.get(original, original)
+        actual = original if original.is_file() else moved_paths.get(original, original)
+        return actual if actual.is_relative_to(root) else None
     def shadow(path):
         return any(core.is_shadow_directory(Path(part)) for part in path.relative_to(root).parts[:-1])
     for batch in batches:
@@ -141,7 +143,7 @@ def scan(root, mode="normal", rules=None, travel=False):
             if p.name in {'latest.json', 'pool.json'}:
                 continue
             try:
-                d = json.loads(p.read_text())
+                d = json.loads(p.read_text(encoding='utf-8'))
                 if not isinstance(d, dict):
                     continue
                 has_moves = has_moves or any(not e.get('reverted') and Path(e.get('dst_after', '')).resolve() in file_set for e in d.get('entries', []))

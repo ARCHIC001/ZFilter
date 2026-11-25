@@ -428,6 +428,8 @@ def iter_files_recursive(root: Path, excluded_dirs: Set[Path], include_shadow: b
         pruned: List[str] = []
         for d in dirs:
             dpath = cur / d
+            if dpath.is_symlink() or (sys.platform == 'win32' and getattr(dpath, 'is_junction', lambda: False)()):
+                continue
             if not include_shadow and is_shadow_directory(dpath):
                 continue
             if is_hidden(dpath):

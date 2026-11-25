@@ -1,0 +1,58 @@
+name: ZFilter Windows preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows-preview]
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2025
+    timeout-minutes: 24
+    env:
+      QT_QPA_PLATFORM: offscreen
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: windows/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r windows/requirements.txt 'pyinstaller>=6.14,<7'
+      - name: Fetch public Nikon Z8 lossless RAW fixture
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/fixtures | Out-Null
+          curl.exe --fail --location --retry 3 --max-time 200 --output build/fixtures/Z8.NEF "https://raw.pixls.us/data/Nikon/Z%208/Nikon_Z8_raw_14_bit_lossless_compression.NEF"
+          if ($LASTEXITCODE) { throw 'Public Nikon RAW fixture download failed' }
+      - name: Test shared core and Windows Qt frontend
+        shell: pwsh
+        run: |
+          python GUI/test_scan_scope.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python GUI/test_storage.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python GUI/test_view_scopes.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m windows.test_windows --raw build/fixtures/Z8.NEF --screenshot build/windows-ui.png
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build Windows portable package
+        shell: pwsh
+        run: ./windows/build.ps1
+      - name: Launch packaged exe and decode Nikon RAW
+        shell: pwsh
+        run: |
+          $sample = (Resolve-Path 'build/fixtures').Path
+          $process = Start-Process -FilePath 'build/windows-release/ZFilter/ZFilter.exe' -ArgumentList "--package-smoke-test --project `"$sample`"" -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Packaged ZFilter exited with code $($process.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZFilter-Windows-x64-preview
+          path: |
+            build/windows-release/ZFilter-Windows-x64-preview.zip
+            build/windows-release/SHA256SUMS.txt
+            build/windows-ui.png
