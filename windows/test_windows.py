@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic, sleep
+from unittest.mock import patch
 
 from PIL import Image
 from PySide6.QtCore import QPoint, QSettings, QSize, QTimer, Qt
@@ -42,6 +43,7 @@ def answer_pool_confirmation(ui, confirm):
                 dialog.reject()
             return
         seen.append(dialog.detailedText())
+        seen.append(dialog.text())
         if confirm:
             move = next((b for b in dialog.buttons() if dialog.buttonRole(b) == QMessageBox.ButtonRole.DestructiveRole),None)
             if move:
@@ -51,7 +53,19 @@ def answer_pool_confirmation(ui, confirm):
 
     QTimer.singleShot(0,respond)
     ui.pool_delete_button.click()
-    assert seen == [expected]
+    assert len(seen) == 2 and seen[0] == expected and 'Windows 系统回收站' in seen[1]
+
+
+def assert_system_recycle(journal, project, count):
+    batches = ops.read_journal(journal)
+    assert len(batches) == 1 and len(batches[0]) == count
+    for entry in batches[0]:
+        path = Path(entry['trash'])
+        assert entry['systemRecycle'] and path.exists() and not path.is_relative_to(project.resolve())
+        if sys.platform == 'win32':
+            assert path.parts[1].casefold() == '$recycle.bin', path
+            assert path.name.upper().startswith('$R'), path
+    assert not (project/'.nikonfilter_logs'/'recycle').exists()
 
 
 def test_workflow(base, raw, screenshot):
@@ -151,7 +165,7 @@ def test_workflow(base, raw, screenshot):
         assert ui.path and Path(ui.path).exists()
         ui.s_button.click()
         wait_for(lambda: not ui.busy and not ui.library['poolPhotos'],'S recycle from pending pool')
-        assert ops.read_journal(ui.journal)
+        assert_system_recycle(ui.journal,project,2)
         ui.restore_delete()
         wait_for(lambda: not ui.busy and len(ui.library['poolPhotos'])==1,'Ctrl+Z restores to pending pool')
 
@@ -171,13 +185,13 @@ def test_workflow(base, raw, screenshot):
         wait_for(lambda: not ui.busy and not ui.library['poolDirectories'],'confirmed whole-pool removal')
         assert ui.pool and not ui.pool_delete_button.isEnabled() and not ui.library['poolBatches']
         assert not any(folder.exists() for folder in folders)
-        assert len(ops.read_journal(ui.journal)) == 1 and len(ops.read_journal(ui.journal)[0]) == 3
+        assert_system_recycle(ui.journal,project,3)
         assert len(ui.library['photos']) == 1 and ui.library['counts']['video'] == 1
         ui.restore_delete()
         wait_for(lambda: not ui.busy and len(ui.library['poolDirectories'])==3,'Ctrl+Z restores all pending folders')
         assert sidecar.read_bytes() == b'review notes' and ui.library['poolBatches']
         assert all(folder.is_dir() for folder in folders) and not ops.read_journal(ui.journal)
-        print('PASS: Windows whole-pool confirmation/cancellation, all scopes, sidecar recovery and grouped Ctrl+Z')
+        print('PASS: system Recycle Bin for photos and whole pools, confirmation/cancellation, sidecars and grouped Ctrl+Z')
         ui.scope_buttons[2].click()
         ui.w_button.click()
         wait_for(lambda: not ui.busy and not ui.library['poolPhotos'],'W restores pair to formal pool')
@@ -217,6 +231,30 @@ def test_nikon_metadata(sample):
     print('PASS: actual Z8 JPEG/NEF EXIF, focus center/box, distance, preset and burst identity')
 
 
+def test_recycle_refusal_and_legacy_undo(base):
+    root = base.resolve() / 'recovery-test'
+    root.mkdir()
+    original = root / 'photo.JPG'
+    original.write_bytes(b'original')
+    journal = base / 'recovery-test.json'
+    with patch.object(ops, 'QFile') as native_file:
+        native_file.return_value.moveToTrash.return_value = False
+        native_file.return_value.fileName.return_value = str(original)
+        try:
+            ops.recycle(root, [original], journal)
+        except OSError:
+            pass
+        else:
+            raise AssertionError('a refused native recycle must report failure')
+    assert original.read_bytes() == b'original' and not ops.read_journal(journal)
+    older_path = root / '.nikonfilter_logs/recycle/older/photo.JPG'
+    ops.move_without_overwrite(original, older_path)
+    ops.write_journal(journal, [[{'root': str(root), 'original': str(original), 'trash': str(older_path)}]])
+    ops.restore_recycle(journal)
+    assert original.read_bytes() == b'original' and not older_path.exists() and not ops.read_journal(journal)
+    print('PASS: refused system recycle leaves the original in place; older preview deletes still undo')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--raw',type=Path)
@@ -224,6 +262,7 @@ def main():
     parser.add_argument('--screenshot',type=Path)
     args = parser.parse_args()
     with TemporaryDirectory(prefix='zfilter-check-') as temp:
+        test_recycle_refusal_and_legacy_undo(Path(temp))
         test_workflow(Path(temp),args.raw,args.screenshot)
     if args.nikon_samples:
         test_nikon_metadata(args.nikon_samples)

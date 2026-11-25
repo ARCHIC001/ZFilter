@@ -4,7 +4,7 @@ Windows 前端与 macOS 应用共用整理、日志、统计和 JPEG／RAW 配�
 
 ## 运行预览包
 
-在 Windows 11 x64 上，下载并解压 ZIP，运行 `ZFilter` 文件夹里的 `ZFilter.exe`，保留同目录的 `_internal`。预览包未做代码签名。 [下载 Windows 便携版](https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.8/ZFilter-Windows-x64-preview.zip) · [发布说明与 SHA-256 校验](https://github.com/ARCHIC001/ZFilter/releases/tag/v1.9.8)
+在 Windows 11 x64 上，下载并解压 ZIP，运行 `ZFilter` 文件夹里的 `ZFilter.exe`，保留同目录的 `_internal`。预览包未做代码签名。 [下载 Windows 便携版](https://github.com/ARCHIC001/ZFilter/releases/download/v1.9.9/ZFilter-Windows-x64-preview.zip) · [发布说明与 SHA-256 校验](https://github.com/ARCHIC001/ZFilter/releases/tag/v1.9.9)
 
 ## 操作
 
@@ -15,17 +15,17 @@ Windows 前端与 macOS 应用共用整理、日志、统计和 JPEG／RAW 配�
 | 100% 对焦点放大、回到适应窗口 | **0 / O**、**,** |
 | 对焦框、EXIF、预览条、连拍折叠 | **F / I / T / B** |
 | 暂存到待删池或在待删池中恢复 | **W** |
-| 移入 ZFilter 废纸篓、撤回 | **S / Delete**、**Ctrl+Z** |
+| 移入 Windows 系统回收站、撤回 | **S / Delete**、**Ctrl+Z** |
 | 沉浸、全屏 | **Tab / F11** |
 
 左下角绿、黄、红三个按钮分别控制仅 JPEG、仅 RAW、已配对的 JPEG+RAW。拖动快速定位轨，松手后跳到目标照片。左上角 Logo 切换深浅色。
 
-在待删池界面，点击底部「删除整个待删池」，可在确认框中展开目录清单。确认后，当前项目的全部待删池文件夹及其中内容会移入 ZFilter 废纸篓，按 **Ctrl+Z** 可整批恢复。
+在待删池界面，点击底部「删除整个待删池」，可在确认框中展开目录清单。确认后，当前项目的全部待删池文件夹及其中内容会移入 Windows 系统回收站，按 **Ctrl+Z** 可整批恢复。
 
 ## 和 macOS 版的差异
 
 - Windows 通过 LibRaw 显影 RAW。无损 NEF 用标准 LibRaw，Nikon 高效率 NEF 用打包内的 HE 解码组件。RAW 大图从传感器数据生成。Windows 与 macOS 使用不同的显影引擎，色彩与有效画幅边缘可能有差异。 [LibRaw 相机支持](https://www.libraw.org/supported-cameras) · [HE 解码组件源码](https://github.com/zidage/LibRaw/tree/fca3ee4db0b51f3787534fc370891e93ceb52f59)
-- Windows 预览版的 **S / Delete** 把文件移到项目下隐藏的 `.nikonfilter_logs/recycle`，可用 **Ctrl+Z** 恢复。整个文件仍在原盘，恢复会检查目标是否已存在。Windows 系统回收站由系统单独管理。
+- 文件进入 Windows 系统回收站后，可在资源管理器恢复，也可在 ZFilter 按 **Ctrl+Z** 撤回最近一批。磁盘或系统设置不支持回收时，ZFilter 会停止删除并提示。旧版项目内暂存的文件仍可用 **Ctrl+Z** 恢复。
 - 共享的整理日志和待删池日志记录绝对路径。跨系统或迁移磁盘目录前，建议在原位置完成撤回和恢复。
 
 ## 从源码运行和打包

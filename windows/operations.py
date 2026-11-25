@@ -6,6 +6,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
+from PySide6.QtCore import QFile
+
 import nikonfilter as core
 from GUI.filter_bridge import scan
 
@@ -192,11 +194,15 @@ def restore_pool(root, paths=(), all_batches=False):
         write_journal(journal, [batch for batch in batches if batch['entries']])
 
 
+def system_recycle_path(path):
+    return path.is_absolute() and (os.name != 'nt' or (
+        len(path.parts) == 4 and path.parts[1].casefold() == '$recycle.bin'
+        and path.parts[2].upper().startswith('S-1-') and path.name.upper().startswith('$R')
+    ))
+
+
 def recycle(root, paths, journal, *, directories=False):
-    # Same-volume recovery between launches. Keep all moved bytes under the project
-    # so an external disk can be detached without leaving media on the system drive.
-    target_dir = root / core.LOG_DIR_NAME / 'recycle' / uuid4().hex
-    entries = []
+    originals = []
     for path in paths:
         original = inside(root, path)
         if directories:
@@ -207,10 +213,22 @@ def recycle(root, paths, journal, *, directories=False):
                 raise ValueError(f'待删池目录已经变化，请刷新后重试：{path}')
         elif not original.is_file():
             raise FileNotFoundError(original)
-        target = inside(root, unique_destination(target_dir / uuid4().hex / original.name))
-        entries.append({'original': str(original), 'trash': str(target), 'root': str(root)})
-    if entries:
-        record_then_move(journal, read_journal(journal), entries, entries)
+        originals.append(original)
+    if not originals:
+        return
+
+    batches = read_journal(journal)
+    write_journal(journal, batches)
+    entries = []
+    for original in originals:
+        item = QFile(str(original))
+        moved = item.moveToTrash()
+        target = Path(item.fileName())
+        if not moved or not system_recycle_path(target) or target == original or not target.exists():
+            detail = f'已有 {len(entries)} 项可从系统回收站恢复。' if entries else ''
+            raise OSError(f'系统回收站未确认接收：{original}。{detail}')
+        entries.append({'original': str(original), 'trash': str(target), 'root': str(root), 'systemRecycle': True})
+        write_journal(journal, [*batches, entries])
 
 
 def restore_entries(selected):
@@ -234,10 +252,16 @@ def restore_recycle(journal):
     selected = {}
     for entry in batches[-1]:
         root = core.safe_resolve_dir(entry['root'])
-        source = inside(root, entry['trash'])
         target = inside(root, entry['original'])
-        if not source.is_relative_to(root / core.LOG_DIR_NAME / 'recycle'):
-            raise ValueError('文件不在项目的 ZFilter 废纸篓。')
+        if entry.get('systemRecycle'):
+            source = Path(entry['trash'])
+            if not system_recycle_path(source) or source.is_symlink() or getattr(source, 'is_junction', lambda: False)():
+                raise ValueError('系统回收站路径无效。')
+        else:
+            # Older previews stored recoverable files inside the project.
+            source = inside(root, entry['trash'])
+            if not source.is_relative_to(root / core.LOG_DIR_NAME / 'recycle'):
+                raise ValueError('旧版撤回目录无效。')
         selected[source] = target
     restore_entries(selected)
     write_journal(journal, batches[:-1])

@@ -457,7 +457,7 @@ class Window(QMainWindow):
         footer.addWidget(self.step_label)
         footer.addWidget(button('',partial(self.step,1),'下一张 · D / →',compact=True,glyph='next'))
         self.w_button = button('',partial(self.cull,True),'移入待删池 · W',compact=True,glyph='stage')
-        self.s_button = button('',partial(self.cull,False),'移入 ZFilter 废纸篓 · S / Delete',compact=True,glyph='delete')
+        self.s_button = button('',partial(self.cull,False),'移入 Windows 系统回收站 · S / Delete',compact=True,glyph='delete')
         footer.addWidget(self.w_button)
         footer.addWidget(self.s_button)
         footer.addWidget(button('',self.restore_delete,'撤回删除 · Ctrl+Z',compact=True,glyph='undo'))
@@ -1329,7 +1329,7 @@ class Window(QMainWindow):
                 return
             self.bursts_scanned = False
             self.apply_library(library,self.photo or preferred)
-            self.report('已移入 ZFilter 废纸篓 · Ctrl+Z 可撤回' if not stage else '已恢复到正式池' if pool else '已移入待删池')
+            self.report('已移入 Windows 系统回收站 · Ctrl+Z 可撤回' if not stage else '已恢复到正式池' if pool else '已移入待删池')
 
         self.begin_io('正在处理照片…',work,done)
 
@@ -1348,12 +1348,12 @@ class Window(QMainWindow):
         dialog.setWindowTitle('删除整个待删池？')
         dialog.setIcon(QMessageBox.Icon.Warning)
         dialog.setTextFormat(Qt.TextFormat.PlainText)
-        dialog.setText(f'将 {len(directories)} 个待删池文件夹及其中全部内容移入 ZFilter 废纸篓？')
+        dialog.setText(f'将 {len(directories)} 个待删池文件夹及其中全部内容移入 Windows 系统回收站？')
         dialog.setInformativeText(f'当前项目：{root}\n可以按 Ctrl+Z 撤回。')
         dialog.setDetailedText('\n'.join(str(Path(path).relative_to(root)) for path in directories))
         cancel = dialog.addButton(QMessageBox.StandardButton.Cancel)
         cancel.setText('取消')
-        move = dialog.addButton('移入 ZFilter 废纸篓',QMessageBox.ButtonRole.DestructiveRole)
+        move = dialog.addButton('移入 Windows 系统回收站',QMessageBox.ButtonRole.DestructiveRole)
         dialog.setDefaultButton(cancel)
         dialog.setEscapeButton(cancel)
         dialog.exec()
@@ -1365,7 +1365,7 @@ class Window(QMainWindow):
             self.report('待删池已经变化，请重新确认。')
             return
         self.mutate_and_scan(lambda current:ops.recycle(current,directories,self.journal,directories=True),
-                             f'已移入 {len(directories)} 个待删池文件夹 · Ctrl+Z 可撤回',
+                             f'已将 {len(directories)} 个待删池文件夹移入系统回收站 · Ctrl+Z 可撤回',
                              description='正在删除待删池…',rescan_on_error=True)
 
     def restore_all_pool(self):
