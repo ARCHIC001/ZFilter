@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import QDateTime, QObject, QRectF, QSettings, QStandardPaths, QThreadPool, QTimer, QUrl, Qt, Signal, Slot
+from PySide6.QtCore import QDateTime, QEvent, QObject, QRectF, QSettings, QSize, QStandardPaths, QThreadPool, QTimer, QUrl, Qt, Signal, Slot
 from PySide6.QtGui import (
     QBrush, QColor, QDesktopServices, QFont, QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QShortcut,
 )
 from PySide6.QtWidgets import (
-    QApplication, QBoxLayout, QButtonGroup, QCheckBox, QDateTimeEdit, QDialog, QDialogButtonBox,
+    QApplication, QAbstractButton, QBoxLayout, QButtonGroup, QCheckBox, QDateTimeEdit, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
     QStackedWidget, QToolButton, QVBoxLayout, QWidget,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 import nikonfilter as core
 from windows import media, operations as ops
+from windows.icon import SIZE as ICON_SIZE, fluent_icon
 from windows.viewer import Departure, Histogram, Material, PhotoView, Scrubber, Tile
 
 ICON = Path(__file__).resolve().parents[1] / 'docs/images/zfilter-icon.png'
@@ -48,9 +49,15 @@ def label(text='', role='', wrap=False):
     return widget
 
 
-def button(text, action, tip=None, checkable=False, compact=False):
+def button(text, action, tip=None, checkable=False, compact=False, glyph=None):
     widget = QToolButton() if compact else QPushButton()
     widget.setText(text)
+    if glyph:
+        widget.setProperty('glyph',glyph)
+        widget.setIconSize(ICON_SIZE)
+        if compact:
+            widget.setObjectName('tool')
+            widget.setFixedSize(36,36)
     widget.setCheckable(checkable)
     widget.setCursor(Qt.CursorShape.PointingHandCursor)
     widget.setAccessibleName(tip or text)
@@ -175,13 +182,14 @@ class Window(QMainWindow):
         self.brand = button('ZFilter', self.toggle_theme, '点击切换深色或浅色')
         self.brand.setObjectName('brand')
         self.brand.setIcon(QIcon(str(ICON)))
-        self.collapse_button = button('◧', self.toggle_sidebar, '折叠或展开侧栏', compact=True)
+        self.brand.setIconSize(QSize(28,28))
+        self.collapse_button = button('',self.toggle_sidebar,'折叠或展开侧栏',compact=True,glyph='sidebar-collapse')
         header.addWidget(self.brand, 1)
         header.addWidget(self.collapse_button)
         sidebar.addLayout(header)
         self.nav = []
-        for index, title in enumerate(('素材整理', '沉浸选片', '操作记录')):
-            tab = button(title, partial(self.show_page,index), checkable=True)
+        for index, (title,glyph) in enumerate(zip(('素材整理','沉浸选片','操作记录'),('organize','photos','history'))):
+            tab = button(title,partial(self.show_page,index),checkable=True,glyph=glyph)
             tab.setObjectName('nav')
             sidebar.addWidget(tab)
             self.nav.append(tab)
@@ -189,9 +197,9 @@ class Window(QMainWindow):
         self.projects_label = label('影像项目', 'muted')
         sidebar.addWidget(self.projects_label)
         self.project_tools = project_tools = QHBoxLayout()
-        for name, action, tip in [('＋',self.choose,'添加影像项目'),('↻',self.refresh_all,'刷新项目统计'),
-                                  ('⇅',self.sort_menu,'项目排序')]:
-            project_tools.addWidget(button(name, action, tip, compact=True))
+        for name, action, tip in [('add',self.choose,'添加影像项目'),('refresh',self.refresh_all,'刷新项目统计'),
+                                  ('sort',self.sort_menu,'项目排序')]:
+            project_tools.addWidget(button('',action,tip,compact=True,glyph=name))
         sidebar.addLayout(project_tools)
         self.project_list = QListWidget()
         self.project_list.setObjectName('projects')
@@ -332,18 +340,20 @@ class Window(QMainWindow):
         self.pool_buttons = []
         for index, title in enumerate(('正式池','待删池')):
             toggle = button(title, partial(self.switch_pool,bool(index)), checkable=True)
+            toggle.setFixedSize(106,34)
             self.pool_buttons.append(toggle)
             tools.addWidget(toggle)
-        self.zoom_button = button('⊕',self.focus_zoom,'100% 对焦点 · 0 / O',compact=True)
-        self.fit_button = button('⊟',self.photo_view_fit,'适应窗口 · ,',compact=True)
-        self.focus_toggle = button('⌖',self.toggle_focus_box,'绿色对焦框 · F',checkable=True,compact=True)
-        self.strip_toggle = button('▤',self.toggle_filmstrip,'预览条 · T',checkable=True,compact=True)
-        self.burst_toggle = button('▧',self.toggle_bursts,'折叠或展开全部连拍 · B',checkable=True,compact=True)
-        self.info_toggle = button('ⓘ',self.toggle_inspector,'照片信息 · I',checkable=True,compact=True)
+        self.zoom_button = button('',self.focus_zoom,'100% 对焦点 · 0 / O',compact=True,glyph='zoom-in')
+        self.fit_button = button('',self.photo_view_fit,'适应窗口 · ,',compact=True,glyph='zoom-out')
+        self.focus_toggle = button('',self.toggle_focus_box,'绿色对焦框 · F',checkable=True,compact=True,glyph='focus')
+        self.strip_toggle = button('',self.toggle_filmstrip,'预览条 · T',checkable=True,compact=True,glyph='filmstrip')
+        self.burst_toggle = button('',self.toggle_bursts,'折叠或展开全部连拍 · B',checkable=True,compact=True,glyph='burst')
+        self.info_toggle = button('',self.toggle_inspector,'照片信息 · I',checkable=True,compact=True,glyph='info')
+        self.fullscreen_button = button('',self.toggle_fullscreen,'全屏 · F11',compact=True,glyph='maximize')
         self.focus_toggle.setChecked(self.settings.value('focusBox',False,bool))
         self.strip_toggle.setChecked(self.settings.value('filmstrip',True,bool))
         for widget in (self.zoom_button,self.fit_button,self.focus_toggle,self.strip_toggle,self.burst_toggle,self.info_toggle,
-                       button('⛶',self.toggle_fullscreen,'全屏 · F11',compact=True),button('↻',self.rescan,'刷新配对 · Ctrl+R',compact=True)):
+                       self.fullscreen_button,button('',self.rescan,'刷新配对 · Ctrl+R',compact=True,glyph='refresh')):
             tools.addWidget(widget)
         layout.addLayout(tools)
         middle = QHBoxLayout()
@@ -439,14 +449,14 @@ class Window(QMainWindow):
             self.scope_buttons.append(toggle)
         footer.addStretch()
         self.step_label = label('0 / 0','muted')
-        footer.addWidget(button('‹',partial(self.step,-1),'上一张 · A / ←',compact=True))
+        footer.addWidget(button('',partial(self.step,-1),'上一张 · A / ←',compact=True,glyph='previous'))
         footer.addWidget(self.step_label)
-        footer.addWidget(button('›',partial(self.step,1),'下一张 · D / →',compact=True))
-        self.w_button = button('待删',partial(self.cull,True),'移入待删池 · W',compact=True)
-        self.s_button = button('删除',partial(self.cull,False),'移入 ZFilter 废纸篓 · S / Delete',compact=True)
+        footer.addWidget(button('',partial(self.step,1),'下一张 · D / →',compact=True,glyph='next'))
+        self.w_button = button('',partial(self.cull,True),'移入待删池 · W',compact=True,glyph='stage')
+        self.s_button = button('',partial(self.cull,False),'移入 ZFilter 废纸篓 · S / Delete',compact=True,glyph='delete')
         footer.addWidget(self.w_button)
         footer.addWidget(self.s_button)
-        footer.addWidget(button('↶',self.restore_delete,'撤回删除 · Ctrl+Z',compact=True))
+        footer.addWidget(button('',self.restore_delete,'撤回删除 · Ctrl+Z',compact=True,glyph='undo'))
         layout.addLayout(footer)
         self.departure = Departure(page)
         return page
@@ -505,10 +515,12 @@ class Window(QMainWindow):
         self.sidebar_header.setDirection(direction)
         self.project_tools.setDirection(direction)
         self.brand.setText('' if self.collapsed else 'ZFilter')
-        self.collapse_button.setText('▸' if self.collapsed else '◧')
+        self.set_glyph(self.collapse_button,'sidebar-expand' if self.collapsed else 'sidebar-collapse')
+        self.brand.setStyleSheet('text-align:center;' if self.collapsed else '')
         self.projects_label.setVisible(not self.collapsed)
         for i, title in enumerate(('素材整理','沉浸选片','操作记录')):
-            self.nav[i].setText(('▤','▣','◷')[i] if self.collapsed else title)
+            self.nav[i].setText('' if self.collapsed else title)
+            self.nav[i].setStyleSheet('text-align:center;padding:0;' if self.collapsed else '')
             self.nav[i].setAccessibleName(title)
             self.nav[i].setToolTip(title)
         self.refresh_projects()
@@ -531,6 +543,16 @@ class Window(QMainWindow):
     def toggle_fullscreen(self):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
+    def changeEvent(self,event):
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and hasattr(self,'fullscreen_button'):
+            self.set_glyph(self.fullscreen_button,'restore-window' if self.isFullScreen() else 'maximize')
+
+    def set_glyph(self, widget, name):
+        widget.setProperty('glyph',name)
+        if hasattr(self,'dark'):
+            widget.setIcon(fluent_icon(name,self.dark))
+
     def toggle_theme(self):
         self.theme = 'light' if self.dark else 'dark'
         self.settings.setValue('theme',self.theme)
@@ -541,6 +563,7 @@ class Window(QMainWindow):
         self.dark = self.theme == 'dark' or (self.theme == 'system' and system)
         a,b,c,d,e,f,g = (('#10151e','#181f2a','#222c3a','#354154','#edf2fa','#a7b7cc','#6ca9ff') if self.dark
                           else ('#edf2f8','#f9fbfe','#e9eff7','#cbd5e4','#192638','#53637c','#1859ad'))
+        active_tool = '#344054' if self.dark else '#dce6f3'
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Text,QColor(e))
         palette.setColor(QPalette.ColorRole.WindowText,QColor(e))
@@ -564,6 +587,11 @@ class Window(QMainWindow):
             QPushButton#nav {{text-align:left;min-height:20px;background:transparent;border-color:transparent;}}
             QPushButton#nav:checked {{background:{c};color:{g};}}
             QPushButton#primary {{background:{g};color:{a};font-weight:700;}}
+            QToolButton#tool {{padding:0;background:transparent;border:1px solid transparent;border-radius:8px;}}
+            QToolButton#tool:hover {{background:{c};border-color:{d};}}
+            QToolButton#tool:checked {{background:{active_tool};border-color:{d};}}
+            QToolButton#tool:pressed {{background:{active_tool};}}
+            QToolButton#tool:focus {{border-color:{g};}}
             QToolButton#badge {{font-size:10px;padding:1px 4px;background:{b};}}
             QScrollArea,QScrollArea>QWidget>QWidget {{background:transparent;}}
             QListWidget {{background:transparent;border:0;outline:0;}}
@@ -572,6 +600,11 @@ class Window(QMainWindow):
             QListWidget::item:selected {{background:transparent;color:{e};}}
             QSlider::groove:horizontal {{height:4px;background:{d};border-radius:2px;}}
             QSlider::handle:horizontal {{width:14px;background:{g};margin:-5px 0;border-radius:7px;}}
+            QScrollBar:vertical {{background:transparent;width:9px;margin:2px 0;}}
+            QScrollBar::handle:vertical {{background:{d};border-radius:4px;min-height:26px;}}
+            QScrollBar::handle:vertical:hover {{background:{f};}}
+            QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {{height:0;}}
+            QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical {{background:none;}}
             QProgressBar {{background:{c};border:0;border-radius:2px;}}
             QProgressBar::chunk {{background:{g};border-radius:2px;}}
             QMenu {{background:{b};color:{e};border:1px solid {d};}}
@@ -583,6 +616,9 @@ class Window(QMainWindow):
         for panel in (self.filmstrip,self.inspector,self.histogram):
             panel.dark = self.dark
             panel.update()
+        for widget in self.findChildren(QAbstractButton):
+            if glyph := widget.property('glyph'):
+                widget.setIcon(fluent_icon(glyph,self.dark))
         self.apply_chrome()
         self.refresh_projects()
         self.update_viewer(load=False)
@@ -1094,8 +1130,10 @@ class Window(QMainWindow):
             color = (POOL_COLORS if self.dark else ('#117b23','#a44900'))[index]
             widget.setStyleSheet(f'color:{color};border-color:{color};' if pool == self.pool else '')
             widget.setEnabled(not self.busy)
-        self.w_button.setText('恢复' if self.pool else '待删')
-        self.w_button.setToolTip('恢复到正式池 · W' if self.pool else '移入待删池 · W')
+        self.set_glyph(self.w_button,'unstage' if self.pool else 'stage')
+        stage_action = '恢复到正式池 · W' if self.pool else '移入待删池 · W'
+        self.w_button.setToolTip(stage_action)
+        self.w_button.setAccessibleName(stage_action)
         self.w_button.setEnabled(bool(self.photo) and not self.busy)
         self.s_button.setEnabled(bool(self.photo) and not self.busy)
         self.burst_toggle.setChecked(self.fold_all)

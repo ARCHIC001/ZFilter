@@ -8,10 +8,10 @@ from tempfile import TemporaryDirectory
 from time import monotonic, sleep
 
 from PIL import Image
-from PySide6.QtCore import QPoint, QSettings, Qt
+from PySide6.QtCore import QPoint, QSettings, QSize, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QToolButton
 
 from windows.app import Window
 from windows import media, operations as ops
@@ -59,6 +59,13 @@ def test_workflow(base, raw, screenshot):
     try:
         ui.show()
         ui.activateWindow()
+        icons = [widget for widget in ui.findChildren(QToolButton) if widget.objectName() == 'tool']
+        assert len(icons) >= 16 and all(widget.size() == QSize(36,36) and widget.iconSize() == QSize(18,18)
+                                        and not widget.icon().isNull() for widget in icons)
+        ui.collapse_button.click()
+        assert ui.collapsed and ui.collapse_button.property('glyph') == 'sidebar-expand'
+        ui.collapse_button.click()
+        assert not ui.collapsed and ui.collapse_button.property('glyph') == 'sidebar-collapse'
         ui.open_project(project)
         assert ui.busy and ui.library is None
         wait_for(lambda: not ui.busy and ui.library is not None, 'JPEG/RAW/MOV inventory')
@@ -116,6 +123,7 @@ def test_workflow(base, raw, screenshot):
         assert not any(Path(path).exists() for path in active)
         ui.pool_buttons[1].click()
         assert ui.pool and len(ui.photos)==1
+        assert ui.w_button.property('glyph') == 'unstage'
         assert ui.path and Path(ui.path).exists()
         ui.s_button.click()
         wait_for(lambda: not ui.busy and not ui.library['poolPhotos'],'S recycle from pending pool')

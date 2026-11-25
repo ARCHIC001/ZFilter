@@ -1,6 +1,6 @@
 # ZFilter Windows 预览版
 
-Windows 前端与 macOS 应用共用整理、日志、统计和 JPEG／RAW 配对引擎。Windows 界面采用 Qt Widgets 和高斯模糊材质，显示原生标题栏、系统文件夹选择器及深浅色界面。
+Windows 前端与 macOS 应用共用整理、日志、统计和 JPEG／RAW 配对引擎。Windows 界面采用 Qt Widgets 和高斯模糊材质，显示原生标题栏、系统文件夹选择器及深浅色界面。工具栏采用统一的 Fluent 线框图标，展开和折叠侧栏时保留相同的按钮尺寸。 [Microsoft Fluent System Icons](https://github.com/microsoft/fluentui-system-icons)
 
 ## 运行预览包
 
