@@ -4,8 +4,12 @@ from functools import lru_cache
 from io import BytesIO
 from math import isfinite
 from pathlib import Path
+import os
 import re
+import shutil
 import struct
+import subprocess
+from tempfile import TemporaryDirectory
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
@@ -236,21 +240,49 @@ def to_qimage(image):
     return QImage(image.tobytes(), image.width, image.height, image.width*3, QImage.Format.Format_RGB888).copy()
 
 
+def decode_nikon_he(path, thumbnail=False):
+    """Render the original NEF data using the optional HE-capable LibRaw helper."""
+    default = Path(__file__).resolve().parents[1] / 'rawcodec' / 'zfilter-raw.exe'
+    helper = Path(os.environ.get('ZFILTER_RAW_CODEC', default)).resolve()
+    if not helper.is_file():
+        raise RuntimeError('此 NEF 编码需要 ZFilter 的 HE 解码组件。')
+    with TemporaryDirectory(prefix='zfilter-raw-') as directory:
+        folder = Path(directory)
+        # Pass ASCII basenames to the decoder even when the user path is Unicode.
+        shutil.copyfile(path, folder/'source.NEF')
+        argv = [str(helper),'-w','-o','1','-T','-Z','decoded.tiff']
+        if thumbnail:
+            argv.append('-h')
+        result = subprocess.run([*argv,'source.NEF'],cwd=folder,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                                timeout=90,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        decoded = folder/'decoded.tiff'
+        if result.returncode or not decoded.is_file():
+            message = result.stderr.decode('utf-8',errors='replace').strip()
+            raise RuntimeError('无法显影此 NEF。'+(f' {message[-280:]}' if message else ''))
+        with Image.open(decoded) as image:
+            return image.convert('RGB')
+
+
 def load_pixels(path, thumbnail=False):
     if is_raw(path):
         import rawpy
-        # Opening a Python stream preserves Unicode Windows paths with all LibRaw builds.
-        with open(path, 'rb') as stream, rawpy.imread(stream) as raw:
-            if thumbnail:
-                try:
-                    preview = raw.extract_thumb()
-                    if preview.format == rawpy.ThumbFormat.JPEG:
-                        return ImageOps.exif_transpose(Image.open(BytesIO(preview.data))).convert('RGB')
-                    return Image.fromarray(preview.data).convert('RGB')
-                except (rawpy.LibRawError, OSError):
-                    pass
-            return Image.fromarray(raw.postprocess(use_camera_wb=True, half_size=thumbnail,
-                                                   output_color=rawpy.ColorSpace.sRGB, output_bps=8))
+        try:
+            # Opening a Python stream preserves Unicode Windows paths with all LibRaw builds.
+            with open(path, 'rb') as stream, rawpy.imread(stream) as raw:
+                if thumbnail:
+                    try:
+                        preview = raw.extract_thumb()
+                        if preview.format == rawpy.ThumbFormat.JPEG:
+                            return ImageOps.exif_transpose(Image.open(BytesIO(preview.data))).convert('RGB')
+                        return Image.fromarray(preview.data).convert('RGB')
+                    except (rawpy.LibRawError, OSError):
+                        pass
+                return Image.fromarray(raw.postprocess(use_camera_wb=True, half_size=thumbnail,
+                                                       output_color=rawpy.ColorSpace.sRGB, output_bps=8))
+        except (rawpy.LibRawFileUnsupportedError, rawpy.LibRawNotImplementedError):
+            if Path(path).suffix.casefold() != '.nef':
+                raise
+            return decode_nikon_he(path,thumbnail)
     with Image.open(path) as jpeg:
         if thumbnail:
             jpeg.draft('RGB', (320, 320))

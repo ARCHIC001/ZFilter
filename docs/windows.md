@@ -22,13 +22,13 @@ Windows 11 x64 下，从 [测试运行记录](https://github.com/ARCHIC001/ZFilt
 
 ## 和 macOS 版的差异
 
-- Windows 通过 LibRaw 显影 RAW。支持范围随 RAW 相机和压缩格式变化。Nikon Z8 的无损压缩 NEF 可由 LibRaw 解码。HE／HE★ 属于专有压缩，当前 LibRaw 路径会报无法解码。配对视图仍可查看对应 JPEG，EXIF 和对焦元数据仍可读取。 [LibRaw 相机支持](https://www.libraw.org/supported-cameras)
+- Windows 通过 LibRaw 显影 RAW。无损 NEF 用标准 LibRaw，Nikon 高效率 NEF 用打包内的 HE 解码组件。RAW 大图从传感器数据生成。Windows 与 macOS 使用不同的显影引擎，色彩与有效画幅边缘可能有差异。 [LibRaw 相机支持](https://www.libraw.org/supported-cameras) · [HE 解码组件源码](https://github.com/zidage/LibRaw/tree/fca3ee4db0b51f3787534fc370891e93ceb52f59)
 - Windows 预览版的 **S / Delete** 把文件移到项目下隐藏的 `.nikonfilter_logs/recycle`，可用 **Ctrl+Z** 恢复。整个文件仍在原盘，恢复会检查目标是否已存在。Windows 系统回收站由系统单独管理。
 - 共享的整理日志和待删池日志记录绝对路径。跨系统或迁移磁盘目录前，建议在原位置完成撤回和恢复。
 
 ## 从源码运行和打包
 
-在仓库根目录使用 64 位 Python 3.12。
+在仓库根目录使用 64 位 Python 3.12。构建包含 HE 解码组件的便携包需要 Git、CMake 和 Visual Studio 2022 的 C++ 桌面开发工具。
 
 ```powershell
 python -m pip install -r windows/requirements.txt
@@ -37,8 +37,9 @@ python -m pip install 'pyinstaller>=6.14,<7'
 ./windows/build.ps1
 ```
 
-打包输出位于 `build/windows-release/`。测试会构造独立目录并验证中文路径、整理、RAW 解码、筛选、待删池和恢复。测试使用用户提供的本地样本或 [raw.pixls.us](https://raw.pixls.us/) 的公开 Nikon 无损 NEF。
+打包输出位于 `build/windows-release/`。从源码运行时，可先执行 `windows/build-codec.ps1`，再指定 HE 解码组件路径。测试会构造独立目录并验证中文路径、整理、RAW 解码、筛选、待删池和恢复。测试使用本地样本或 [raw.pixls.us](https://raw.pixls.us/) 的公开 Nikon NEF。
 
 ```powershell
+$env:ZFILTER_RAW_CODEC = (Resolve-Path 'build/windows-codec/Release/zfilter-raw.exe').Path
 python -m windows.test_windows --raw C:\素材\Z8-lossless.NEF
 ```

@@ -11,7 +11,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 24
     env:
-      QT_QPA_PLATFORM: offscreen
+      QT_QPA_PLATFORM: windows
       OMP_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
@@ -23,22 +23,33 @@ jobs:
           cache-dependency-path: windows/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r windows/requirements.txt 'pyinstaller>=6.14,<7'
-      - name: Fetch public Nikon Z8 lossless RAW fixture
+      - name: Fetch public Nikon Z8 lossless and HE RAW fixtures
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force build/fixtures | Out-Null
-          curl.exe --fail --location --retry 3 --max-time 200 --output build/fixtures/Z8.NEF "https://raw.pixls.us/data/Nikon/Z%208/Nikon_Z8_raw_14_bit_lossless_compression.NEF"
-          if ($LASTEXITCODE) { throw 'Public Nikon RAW fixture download failed' }
+          New-Item -ItemType Directory -Force build/fixtures/lossless, build/fixtures/he | Out-Null
+          $base = "https://raw.pixls.us/data/Nikon/Z%208"
+          curl.exe --fail --location --retry 3 --max-time 200 --output build/fixtures/lossless/Z8.NEF "$base/Nikon_Z8_raw_14_bit_lossless_compression.NEF"
+          if ($LASTEXITCODE) { throw 'Public Nikon lossless RAW fixture download failed' }
+          if ((Get-FileHash build/fixtures/lossless/Z8.NEF -Algorithm SHA256).Hash.ToLower() -ne 'c13a8675294456b9c979e6c1e556951654f35377b2870af2874bfb556f21ce40') { throw 'Lossless fixture checksum differs' }
+          curl.exe --fail --location --retry 3 --max-time 200 --output build/fixtures/he/Z8.NEF "$base/Nikon_Z8_raw_high_efficiency_hight.NEF"
+          if ($LASTEXITCODE) { throw 'Public Nikon HE RAW fixture download failed' }
+          if ((Get-FileHash build/fixtures/he/Z8.NEF -Algorithm SHA256).Hash.ToLower() -ne 'ea8b093cd11c946c5eeb501b775859e8e617ce1d79577abc41b233c339e4004c') { throw 'HE fixture checksum differs' }
+      - name: Build pinned Nikon HE decoder
+        shell: pwsh
+        run: ./windows/build-codec.ps1
       - name: Test shared core and Windows Qt frontend
         shell: pwsh
         run: |
+          $env:ZFILTER_RAW_CODEC = (Resolve-Path 'build/windows-codec/Release/zfilter-raw.exe').Path
           python GUI/test_scan_scope.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python GUI/test_storage.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python GUI/test_view_scopes.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m windows.test_windows --raw build/fixtures/Z8.NEF --screenshot build/windows-ui.png
+          python -m windows.test_windows --raw build/fixtures/lossless/Z8.NEF
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m windows.test_windows --raw build/fixtures/he/Z8.NEF --screenshot build/windows-ui.png
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build Windows portable package
         shell: pwsh
@@ -46,9 +57,11 @@ jobs:
       - name: Launch packaged exe and decode Nikon RAW
         shell: pwsh
         run: |
-          $sample = (Resolve-Path 'build/fixtures').Path
-          $process = Start-Process -FilePath 'build/windows-release/ZFilter/ZFilter.exe' -ArgumentList "--package-smoke-test --project `"$sample`"" -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw "Packaged ZFilter exited with code $($process.ExitCode)" }
+          foreach ($codec in 'lossless','he') {
+            $sample = (Resolve-Path "build/fixtures/$codec").Path
+            $process = Start-Process -FilePath 'build/windows-release/ZFilter/ZFilter.exe' -ArgumentList "--package-smoke-test --project `"$sample`"" -PassThru -Wait
+            if ($process.ExitCode -ne 0) { throw "Packaged ZFilter exited with code $($process.ExitCode) for $codec" }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: ZFilter-Windows-x64-preview

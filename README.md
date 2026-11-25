@@ -48,3 +48,7 @@ bash GUI/package.sh
 ```
 
 应用写入 `build/ZFilter.app`，DMG 与校验文件写入 `build/dist/`。整理引擎也可通过 `./nikonfilter` 运行。 [命令行指南](docs/cli.md) · [验证与元数据参考](docs/development.md)
+
+## Windows 预览
+
+Windows 11 x64 前端共用整理和配对引擎，支持 RAW 浏览与待删复核。 [Windows 预览包与教程](docs/windows.md)
