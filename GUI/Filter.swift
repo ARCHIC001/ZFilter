@@ -738,7 +738,7 @@ struct ContentView: View {
     @State private var confirmUndo = false
     @State private var deletingPool: PoolRemoval?
     @State private var choosingFolder = false
-    var observeFolderPickerFrame: ((CGRect) -> Void)? = nil
+    var observeFolderPicker: ((CGRect, Binding<Bool>) -> Void)? = nil
     var accent: Color { Color(nsColor: FilterPalette.blue.accent(dark: colorScheme == .dark)) }
     var accentInk: Color { FilterPalette.blue.ink(dark: colorScheme == .dark) }
     var body: some View {
@@ -1208,9 +1208,9 @@ struct ContentView: View {
                 .frame(minWidth: 144, idealWidth: 176, maxWidth: 214)
         }.buttonStyle(ViewerToolStyle(active: choosingFolder, width: nil))
             .background {
-                if let observeFolderPickerFrame {
+                if let observeFolderPicker {
                     Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
-                        observeFolderPickerFrame($0)
+                        observeFolderPicker($0, $choosingFolder)
                     }
                 }
             }

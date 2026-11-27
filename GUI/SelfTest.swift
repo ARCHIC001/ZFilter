@@ -1116,8 +1116,9 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
     let checkPicker = CommandLine.arguments.contains("--folder-picker")
     for scheme in [ColorScheme.light, .dark] {
         var pickerFrame = CGRect.zero
-        let watch: ((CGRect) -> Void)? = checkPicker ? { pickerFrame = $0 } : nil
-        let view=NSHostingView(rootView:ContentView(observeFolderPickerFrame: watch).environmentObject(model).environment(\.colorScheme,scheme))
+        var pickerOpen: Binding<Bool>?
+        let watch: ((CGRect, Binding<Bool>) -> Void)? = checkPicker ? { pickerFrame = $0; pickerOpen = $1 } : nil
+        let view=NSHostingView(rootView:ContentView(observeFolderPicker: watch).environmentObject(model).environment(\.colorScheme,scheme))
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:960),styleMask:[.titled],backing:.buffered,defer:false)
         window.appearance=NSAppearance(named:scheme == .light ? .aqua : .darkAqua)
         window.contentView=view; window.title="Filter appearance QA"; window.makeKeyAndOrderFront(nil)
@@ -1127,21 +1128,11 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
             for width in [1000, 1280] {
                 window.setContentSize(NSSize(width: width, height: 710))
                 window.center(); pump(); view.layoutSubtreeIfNeeded()
-                guard (144...214).contains(pickerFrame.width.rounded()), view.bounds.contains(pickerFrame) else {
+                guard let pickerOpen, (144...214).contains(pickerFrame.width.rounded()), view.bounds.contains(pickerFrame) else {
                     throw FileActions.failure("Directory trigger is clipped at \(scheme) \(width): \(pickerFrame)")
                 }
-                let point = view.convert(NSPoint(x: pickerFrame.midX,
-                                                y: view.isFlipped ? pickerFrame.midY : view.bounds.height - pickerFrame.midY), to: nil)
-                func clickPicker() {
-                    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                        let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
-                                                      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                                                      context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
-                        if let event { window.sendEvent(event) }
-                    }
-                }
                 let previouslyVisible = Set(app.windows.filter(\.isVisible).map(\.windowNumber))
-                clickPicker()
+                pickerOpen.wrappedValue = true
                 pump()
                 let windows = (window.childWindows ?? []) + app.windows
                 guard let panelWindow = windows.first(where: { $0.isVisible && !previouslyVisible.contains($0.windowNumber) && $0.frame.width >= 368 }) else {
@@ -1155,7 +1146,7 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
                     try capture.run(); capture.waitUntilExit()
                     if capture.terminationStatus != 0 { print("Window capture unavailable for \(part)") }
                 }
-                clickPicker()
+                pickerOpen.wrappedValue = false
                 pump()
             }
             print("PASS directory toolbar width and native popover in \(scheme), at 1000 and 1280 points")
