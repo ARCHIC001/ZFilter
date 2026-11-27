@@ -1139,66 +1139,107 @@ struct ContentView: View {
         }.padding(.horizontal,12).padding(.vertical,9)
     }
     var viewerToolbar: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading,spacing: 5) {
-                Text(m.currentPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "沉浸选片").font(.system(size: 14,weight: .medium)).lineLimit(1).truncationMode(.middle)
-                Text((m.currentProjectOffline ? "项目离线 · " : m.viewingLabel+" · ")+m.viewportLabel).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            folderPicker
-            Spacer(minLength: 8)
-            GlassEffectContainer(spacing: 10) {
+        GlassEffectContainer(spacing: 10) {
+            ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) {
-                    HStack(spacing: 2) {
-                        poolTab("正式池", count: m.scopedPhotos(pool: false).count, pool: false)
-                        poolTab("待删池", count: m.scopedPhotos(pool: true).count, pool: true)
-                    }.fixedSize(horizontal: true, vertical: false)
-                        .padding(3).glassEffect(.regular, in: RoundedRectangle(cornerRadius: 9)).disabled(m.working)
-                    HStack(spacing: 2) {
-                        Button { m.focusCurrent() } label: { Image(systemName: "viewfinder") }.buttonStyle(ViewerToolStyle(active: m.focusTracking)).help("对焦点 / 中心兜底 100%，切图保持 · 0 / O").accessibilityLabel("对焦点放大").accessibilityValue(m.focusTracking ? "切图保持" : "未开启")
-                        Button { m.fitCurrent() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }.help("适应窗口，退出对焦点保持 · 、").accessibilityLabel("缩小至适应窗口")
-                        Button { m.showsFocusBox.toggle() } label: { Image(systemName: "scope") }
-                            .buttonStyle(ViewerToolStyle(active: m.showsFocusBox))
-                            .accessibilityLabel("显示绿色对焦框").accessibilityValue(m.showsFocusBox ? "已开启" : "已关闭")
-                            .help("显示或隐藏相机记录的对焦框 · F")
-                        Divider().frame(height: 16).padding(.horizontal,4)
-                        Button { m.toggleFilmstrip() } label: { Image(systemName: "rectangle.split.3x1") }.buttonStyle(ViewerToolStyle(active: m.filmstripVisible)).help("显示或隐藏缩略图预览条 · T").accessibilityLabel("缩略图预览条").accessibilityValue(m.filmstripVisible ? "已开启" : "已关闭")
-                        Button(action: m.toggleBursts) {
-                            if m.scanningBursts { ProgressView().controlSize(.mini) }
-                            else { Image(systemName: m.burstsCollapsed ? "square.stack.fill" : "square.stack") }
-                        }.buttonStyle(ViewerToolStyle(active: m.burstsCollapsed))
-                            .disabled(m.root.isEmpty || m.working || m.scanningBursts || m.currentProjectOffline)
-                            .accessibilityLabel(m.burstsCollapsed ? "展开全部连拍" : "折叠全部连拍")
-                            .help(m.burstsCollapsed ? "展开全部连拍 · B" : "折叠全部连拍 · B。文件操作只作用于当前照片。")
-                        Button { m.exif.toggle() } label: { Image(systemName: "info.circle") }.buttonStyle(ViewerToolStyle(active: m.exif)).help("照片信息 · I").accessibilityLabel("照片信息")
-                        Button { m.immersive.toggle() } label: { Image(systemName: m.immersive ? "sidebar.left" : "arrow.up.left.and.arrow.down.right") }.buttonStyle(ViewerToolStyle(active: m.immersive)).help("沉浸模式 · Tab")
-                        Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right.square") }.help("全屏 · Control Command F")
-                        Button { Task { await m.scan() } } label: { Image(systemName: "arrow.clockwise") }.disabled(m.busy).help("刷新配对")
-                    }.buttonStyle(ViewerToolStyle()).padding(3).glassEffect(.regular.interactive(),in: RoundedRectangle(cornerRadius: 9))
+                    viewerTitle
+                    viewerScopeTools
+                    viewerActionTools
                 }
-            }.tint(Color.primary)
-        }.padding(.horizontal,12).padding(.vertical,10)
+                VStack(alignment: .trailing, spacing: 6) {
+                    HStack(spacing: 10) {
+                        viewerTitle
+                        viewerScopeTools
+                    }
+                    viewerActionTools
+                }
+            }
+        }.tint(Color.primary).padding(.horizontal,12).padding(.vertical,10)
+    }
+    var viewerTitle: some View {
+        VStack(alignment: .leading,spacing: 5) {
+            Text(m.currentPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "沉浸选片")
+                .font(.system(size: 14,weight: .medium)).lineLimit(1).truncationMode(.middle)
+            Text((m.currentProjectOffline ? "项目离线 · " : m.viewingLabel+" · ")+m.viewportLabel)
+                .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+        }.frame(minWidth: 100, idealWidth: 132, maxWidth: .infinity, alignment: .leading)
+    }
+    var viewerScopeTools: some View {
+        HStack(spacing: 2) {
+            folderPicker
+            Divider().frame(height: 16).padding(.horizontal, 4)
+            poolTab("正式池", count: m.scopedPhotos(pool: false).count, pool: false)
+            poolTab("待删池", count: m.scopedPhotos(pool: true).count, pool: true)
+        }.padding(3).glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 9)).disabled(m.working)
+    }
+    var viewerActionTools: some View {
+        HStack(spacing: 2) {
+            Button { m.focusCurrent() } label: { Image(systemName: "viewfinder") }.buttonStyle(ViewerToolStyle(active: m.focusTracking)).help("对焦点 / 中心兜底 100%，切图保持 · 0 / O").accessibilityLabel("对焦点放大").accessibilityValue(m.focusTracking ? "切图保持" : "未开启")
+            Button { m.fitCurrent() } label: { Image(systemName: "arrow.down.right.and.arrow.up.left") }.help("适应窗口，退出对焦点保持 · 、").accessibilityLabel("缩小至适应窗口")
+            Button { m.showsFocusBox.toggle() } label: { Image(systemName: "scope") }
+                .buttonStyle(ViewerToolStyle(active: m.showsFocusBox))
+                .accessibilityLabel("显示绿色对焦框").accessibilityValue(m.showsFocusBox ? "已开启" : "已关闭")
+                .help("显示或隐藏相机记录的对焦框 · F")
+            Divider().frame(height: 16).padding(.horizontal,4)
+            Button { m.toggleFilmstrip() } label: { Image(systemName: "rectangle.split.3x1") }.buttonStyle(ViewerToolStyle(active: m.filmstripVisible)).help("显示或隐藏缩略图预览条 · T").accessibilityLabel("缩略图预览条").accessibilityValue(m.filmstripVisible ? "已开启" : "已关闭")
+            Button(action: m.toggleBursts) {
+                if m.scanningBursts { ProgressView().controlSize(.mini) }
+                else { Image(systemName: m.burstsCollapsed ? "square.stack.fill" : "square.stack") }
+            }.buttonStyle(ViewerToolStyle(active: m.burstsCollapsed))
+                .disabled(m.root.isEmpty || m.working || m.scanningBursts || m.currentProjectOffline)
+                .accessibilityLabel(m.burstsCollapsed ? "展开全部连拍" : "折叠全部连拍")
+                .help(m.burstsCollapsed ? "展开全部连拍 · B" : "折叠全部连拍 · B。文件操作只作用于当前照片。")
+            Button { m.exif.toggle() } label: { Image(systemName: "info.circle") }.buttonStyle(ViewerToolStyle(active: m.exif)).help("照片信息 · I").accessibilityLabel("照片信息")
+            Button { m.immersive.toggle() } label: { Image(systemName: m.immersive ? "sidebar.left" : "arrow.up.left.and.arrow.down.right") }.buttonStyle(ViewerToolStyle(active: m.immersive)).help("沉浸模式 · Tab")
+            Button { NSApp.keyWindow?.toggleFullScreen(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right.square") }.help("全屏 · Control Command F")
+            Button { Task { await m.scan() } } label: { Image(systemName: "arrow.clockwise") }.disabled(m.busy).help("刷新配对")
+        }.buttonStyle(ViewerToolStyle()).padding(3).glassEffect(.regular.interactive(),in: RoundedRectangle(cornerRadius: 9))
     }
     var folderPicker: some View {
         Button { choosingFolder.toggle() } label: {
-            Label(m.currentFolderTitle, systemImage: "folder").lineLimit(1).frame(maxWidth: 108)
-        }.buttonStyle(.glass).disabled(m.root.isEmpty || m.working)
+            HStack(spacing: 7) {
+                Image(systemName: "folder").font(.system(size: 13, weight: .medium))
+                Text(m.currentFolderTitle).font(.system(size: 12, weight: .medium))
+                    .lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary).rotationEffect(.degrees(choosingFolder ? 180 : 0))
+            }.padding(.horizontal, 9)
+                .frame(minWidth: 144, idealWidth: 176, maxWidth: 214)
+        }.buttonStyle(ViewerToolStyle(active: choosingFolder, width: nil))
+            .disabled(m.root.isEmpty || m.working)
+            .accessibilityIdentifier("folderPicker")
+            .accessibilityLabel("选片目录")
+            .accessibilityValue(m.currentFolderTitle)
             .help(m.selectedFolders[m.showPool] ?? "按目录选片")
-            .popover(isPresented: $choosingFolder) {
+            .popover(isPresented: $choosingFolder, arrowEdge: .top) {
                 let tree = PhotoFolder.tree(m.showPool ? m.poolFolders : m.activeFolders)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(m.showPool ? "待删池目录" : "项目目录").font(.headline).padding(.horizontal, 10)
-                    Button { m.selectFolder(nil); choosingFolder = false } label: {
-                        Label("全部文件夹", systemImage: m.selectedFolders[m.showPool] == nil ? "checkmark" : "folder")
-                    }.buttonStyle(.plain).padding(.horizontal, 10)
-                    List {
-                        OutlineGroup(tree, children: \.children) { folder in
-                            Button { m.selectFolder(folder.id); choosingFolder = false } label: {
-                                Label(folder.name, systemImage: m.selectedFolders[m.showPool] == folder.id ? "checkmark" : "folder")
-                            }.buttonStyle(.plain).help(folder.id)
+                VStack(alignment: .leading, spacing: 9) {
+                    Text(m.showPool ? "待删池目录" : "项目目录")
+                        .font(.system(size: 13, weight: .semibold)).padding(.horizontal, 8)
+                    Divider().opacity(0.65)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            folderPickerRow("全部文件夹", path: nil)
+                            OutlineGroup(tree, children: \.children) { folder in
+                                folderPickerRow(folder.name, path: folder.id)
+                            }
                         }
-                    }.listStyle(.plain)
-                }.padding(.vertical, 12).frame(width: 325, height: 355)
+                    }.scrollIndicators(.automatic)
+                }.foregroundStyle(.primary).padding(12).frame(width: 368, height: 338)
+                    .accessibilityIdentifier("folderPickerPanel")
             }
+    }
+    func folderPickerRow(_ title: String, path: String?) -> some View {
+        let selected = path == m.selectedFolders[m.showPool]
+        return Button { m.selectFolder(path); choosingFolder = false } label: {
+            HStack(spacing: 8) {
+                Image(systemName: path == nil ? "folder.fill" : "folder").foregroundStyle(.secondary)
+                Text(title).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 6)
+                if selected { Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)) }
+            }.font(.system(size: 12, weight: selected ? .semibold : .regular)).padding(.horizontal, 8)
+        }.buttonStyle(ViewerToolStyle(active: selected, width: nil))
+            .accessibilityAddTraits(selected ? .isSelected : []).help(path ?? title)
     }
     func poolTab(_ title: String, count: Int, pool: Bool) -> some View {
         let active = m.showPool == pool
@@ -1232,7 +1273,7 @@ struct ContentView: View {
     func installKeys() {
         guard m.keyMonitor == nil else { return }
         m.keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard NSApp.keyWindow != nil, NSApp.modalWindow == nil, NSApp.keyWindow?.attachedSheet == nil,
+            guard !choosingFolder, NSApp.keyWindow != nil, NSApp.modalWindow == nil, NSApp.keyWindow?.attachedSheet == nil,
                   NSApp.keyWindow?.sheetParent == nil, !(NSApp.keyWindow?.firstResponder is NSTextView) else { return event }
             return m.handleKey(event.keyCode, modifiers: event.modifierFlags, characters: event.charactersIgnoringModifiers) ? nil : event
         }

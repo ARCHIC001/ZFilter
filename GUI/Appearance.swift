@@ -60,23 +60,26 @@ enum ProjectConnection: String {
 
 struct ViewerToolStyle: ButtonStyle {
     var active = false
+    var width: CGFloat? = 30
     func makeBody(configuration: Configuration) -> some View {
-        ViewerToolFace(label: configuration.label,active: active,pressed: configuration.isPressed)
+        ViewerToolFace(label: configuration.label, active: active, pressed: configuration.isPressed, width: width)
     }
 }
 private struct ViewerToolFace<Label: View>: View {
     let label: Label
     let active: Bool
     let pressed: Bool
+    let width: CGFloat?
     @State private var hovered = false
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduced
     var body: some View {
         label.font(.system(size: 14,weight: .medium)).symbolRenderingMode(.monochrome)
-            .foregroundStyle(.primary).frame(width: 30,height: 30)
+            .foregroundStyle(.primary).frame(width: width,height: 30)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(pressed ? 0.17 : active ? 0.11 : hovered ? 0.065 : 0)))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(active ? 0.13 : 0),lineWidth: 0.5))
-            .contentShape(RoundedRectangle(cornerRadius: 6)).opacity(enabled ? 1 : 0.35).scaleEffect(pressed && !reduced ? 0.94 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: 6)).opacity(enabled ? 1 : 0.35)
+            .scaleEffect(pressed && !reduced ? (width == nil ? 0.98 : 0.94) : 1)
             .onHover { hovered = $0 }
             .animation(.easeOut(duration: reduced ? 0 : 0.12),value: hovered)
             .animation(.easeOut(duration: reduced ? 0 : 0.12),value: pressed)
