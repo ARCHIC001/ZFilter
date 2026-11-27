@@ -738,6 +738,7 @@ struct ContentView: View {
     @State private var confirmUndo = false
     @State private var deletingPool: PoolRemoval?
     @State private var choosingFolder = false
+    var observeFolderPickerFrame: ((CGRect) -> Void)? = nil
     var accent: Color { Color(nsColor: FilterPalette.blue.accent(dark: colorScheme == .dark)) }
     var accentInk: Color { FilterPalette.blue.ink(dark: colorScheme == .dark) }
     var body: some View {
@@ -1206,6 +1207,13 @@ struct ContentView: View {
             }.padding(.horizontal, 9)
                 .frame(minWidth: 144, idealWidth: 176, maxWidth: 214)
         }.buttonStyle(ViewerToolStyle(active: choosingFolder, width: nil))
+            .background {
+                if let observeFolderPickerFrame {
+                    Color.clear.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                        observeFolderPickerFrame($0)
+                    }
+                }
+            }
             .disabled(m.root.isEmpty || m.working)
             .accessibilityIdentifier("folderPicker")
             .accessibilityLabel("选片目录")

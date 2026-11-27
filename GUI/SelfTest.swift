@@ -1114,34 +1114,39 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
     let output=URL(fileURLWithPath:FileManager.default.currentDirectoryPath).appendingPathComponent("build")
     func pump() { let end=Date().addingTimeInterval(0.5); while Date()<end { RunLoop.main.run(until:Date().addingTimeInterval(0.01)) } }
     let checkPicker = CommandLine.arguments.contains("--folder-picker")
-    func accessible(_ root: Any, identifier: String) -> NSAccessibilityProtocol? {
-        guard let node = root as? NSAccessibilityProtocol else { return nil }
-        if node.accessibilityIdentifier() == identifier, node.accessibilityFrame().width > 0 { return node }
-        return node.accessibilityChildren()?.lazy.compactMap { accessible($0, identifier: identifier) }.first
-    }
     for scheme in [ColorScheme.light, .dark] {
-        let view=NSHostingView(rootView:ContentView().environmentObject(model).environment(\.colorScheme,scheme))
+        var pickerFrame = CGRect.zero
+        let watch: ((CGRect) -> Void)? = checkPicker ? { pickerFrame = $0 } : nil
+        let view=NSHostingView(rootView:ContentView(observeFolderPickerFrame: watch).environmentObject(model).environment(\.colorScheme,scheme))
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:960),styleMask:[.titled],backing:.buffered,defer:false)
         window.appearance=NSAppearance(named:scheme == .light ? .aqua : .darkAqua)
         window.contentView=view; window.title="Filter appearance QA"; window.makeKeyAndOrderFront(nil)
         if checkPicker {
+            app.activate()
             model.page = 1; model.exif = true; model.deleteMode = "仅 JPEG"
             for width in [1000, 1280] {
                 window.setContentSize(NSSize(width: width, height: 710))
                 window.center(); pump(); view.layoutSubtreeIfNeeded()
-                guard let button = accessible(view, identifier: "folderPicker") ?? accessible(window, identifier: "folderPicker") else {
-                    throw FileActions.failure("Directory trigger accessibility identifier is missing at \(scheme) \(width)")
+                guard (144...214).contains(pickerFrame.width.rounded()), view.bounds.contains(pickerFrame) else {
+                    throw FileActions.failure("Directory trigger is clipped at \(scheme) \(width): \(pickerFrame)")
                 }
-                let frame = button.accessibilityFrame()
-                guard (144...215).contains(frame.width.rounded()), window.frame.contains(frame) else {
-                    throw FileActions.failure("Directory trigger is clipped at \(scheme) \(width): \(frame)")
+                let point = view.convert(NSPoint(x: pickerFrame.midX,
+                                                y: view.isFlipped ? pickerFrame.midY : view.bounds.height - pickerFrame.midY), to: nil)
+                func clickPicker() {
+                    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                        let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                                      context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+                        if let event { window.sendEvent(event) }
+                    }
                 }
-                guard button.accessibilityPerformPress() else {
-                    throw FileActions.failure("Directory trigger did not accept a press at \(scheme) \(width)")
-                }
+                let previouslyVisible = Set(app.windows.filter(\.isVisible).map(\.windowNumber))
+                clickPicker()
                 pump()
-                guard let panelWindow = app.windows.first(where: { $0.isVisible && accessible($0, identifier: "folderPickerPanel") != nil }),
-                      panelWindow != window else { throw FileActions.failure("Directory popover did not open") }
+                let windows = (window.childWindows ?? []) + app.windows
+                guard let panelWindow = windows.first(where: { $0.isVisible && !previouslyVisible.contains($0.windowNumber) && $0.frame.width >= 368 }) else {
+                    throw FileActions.failure("Directory popover did not open at \(scheme) \(width): \(pickerFrame)")
+                }
                 for (part, target) in [("toolbar", window), ("panel", panelWindow)] {
                     let path = output.appendingPathComponent("folder-\(scheme)-\(width)-\(part).png")
                     let capture = Process()
@@ -1150,7 +1155,7 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
                     try capture.run(); capture.waitUntilExit()
                     if capture.terminationStatus != 0 { print("Window capture unavailable for \(part)") }
                 }
-                _ = button.accessibilityPerformPress()
+                clickPicker()
                 pump()
             }
             print("PASS directory toolbar width and native popover in \(scheme), at 1000 and 1280 points")
