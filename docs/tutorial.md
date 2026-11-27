@@ -6,7 +6,7 @@
 
 ## 安装和首次启动
 
-1. 下载 **ZFilter-1.10.0-macOS-arm64.dmg**。它适用于 Apple Silicon Mac，要求 macOS 26 或更新版本。
+1. 下载 **ZFilter-1.10.1-macOS-arm64.dmg**。它适用于 Apple Silicon Mac，要求 macOS 26 或更新版本。
 2. 如需校验，同时下载 **SHA256SUMS.txt**，将两个文件放在同一目录。如果放在「下载」，可在终端运行以下命令，看到 `OK` 后再打开映像。
 
    ```sh

@@ -2,9 +2,9 @@
   <img src="docs/images/zfilter-icon.png" width="104" alt="ZFilter 应用图标">
   <h1>ZFilter</h1>
   <p>整理 JPEG、RAW 与视频，在同一个项目里对照配对照片、查看拍摄信息并选片。</p>
-  <p><strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.0/ZFilter-1.10.0-macOS-arm64.dmg">下载 macOS 安装包</a></strong> · <strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.0/ZFilter-1.10.0-Windows-x64-preview.zip">下载 Windows 便携版</a></strong></p>
+  <p><strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.1/ZFilter-1.10.1-macOS-arm64.dmg">下载 macOS 安装包</a></strong> · <strong><a href="https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.1/ZFilter-1.10.1-Windows-x64-preview.zip">下载 Windows 便携版</a></strong></p>
   <p>macOS 26+ · Apple Silicon　|　Windows 11 x64 · 预览版</p>
-  <p><a href="https://github.com/ARCHIC001/ZFilter/releases/tag/v1.10.0">版本说明与校验文件</a> · <a href="docs/tutorial.md">图文使用教程</a> · <a href="docs/cli.md">命令行指南</a></p>
+  <p><a href="https://github.com/ARCHIC001/ZFilter/releases/tag/v1.10.1">版本说明与校验文件</a> · <a href="docs/tutorial.md">图文使用教程</a> · <a href="docs/cli.md">命令行指南</a></p>
 </div>
 
 ![ZFilter 沉浸选片，右侧打开 EXIF 照片信息面板，显示直方图、曝光参数和 Nikon 色彩预设](docs/images/inspector.jpg)
@@ -27,14 +27,14 @@ ZFilter 以一个素材文件夹为项目，递归清点文件、验证 JPEG／R
 
 ### macOS 26+ · Apple Silicon
 
-1. 下载 [ZFilter-1.10.0-macOS-arm64.dmg](https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.0/ZFilter-1.10.0-macOS-arm64.dmg)。
+1. 下载 [ZFilter-1.10.1-macOS-arm64.dmg](https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.1/ZFilter-1.10.1-macOS-arm64.dmg)。
 2. 打开磁盘映像，将 **ZFilter.app** 拖到 **Applications**。已有旧版时，先退出运行中的 ZFilter。
 3. 从「应用程序」打开 ZFilter。整理引擎使用 `/usr/bin/python3`，如果系统提示缺少命令行工具，按提示安装，或在终端运行 `xcode-select --install`。 [Apple 命令行工具安装说明](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
 4. 当前下载包使用 ad-hoc 签名，首次打开时 macOS 可能要求确认。安装前可对照发布页的 SHA-256，按 Apple 的说明处理首次启动提示。 [校验与首次启动](docs/tutorial.md#安装和首次启动) · [Apple 安全打开指南](https://support.apple.com/zh-cn/102445)
 
 ### Windows 11 x64 · 预览版
 
-1. 下载并解压 [ZFilter-1.10.0-Windows-x64-preview.zip](https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.0/ZFilter-1.10.0-Windows-x64-preview.zip)。
+1. 下载并解压 [ZFilter-1.10.1-Windows-x64-preview.zip](https://github.com/ARCHIC001/ZFilter/releases/download/v1.10.1/ZFilter-1.10.1-Windows-x64-preview.zip)。
 2. 打开解压后的 `ZFilter` 文件夹，运行 `ZFilter.exe`，保留同目录的 `_internal`。发布页提供 Windows 包的 SHA-256 校验文件。 [Windows 操作指南](https://github.com/ARCHIC001/ZFilter/blob/windows-preview/docs/windows.md)
 
 ## 快速上手
