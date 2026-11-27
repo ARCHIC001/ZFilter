@@ -87,6 +87,8 @@ MODE_LABELS = {
 ALL_RULES = {"1", "2", "3", "4", "5"}
 
 LOG_DIR_NAME = ".nikonfilter_logs"
+SHADOW_MARKER = ".zfilter-shadow"
+SHADOW_SUFFIX = " - 待删池"
 LAST_LOG_POINTER = "latest.json"
 
 NIKON_WORD_ART = (
@@ -418,8 +420,13 @@ def is_shadow_directory(path: Path) -> bool:
     return path.name.startswith(("DJpg", "DRaw", "DJpeg", "DJPEG"))
 
 
+def is_mirror_directory(path: Path) -> bool:
+    return path.name.endswith(SHADOW_SUFFIX) and (path / SHADOW_MARKER).is_file()
+
+
 def iter_files_recursive(root: Path, excluded_dirs: Set[Path], include_shadow: bool = True,
-                         shadow_roots: Optional[Set[Path]] = None) -> Iterable[Path]:
+                         shadow_roots: Optional[Set[Path]] = None,
+                         directories: Optional[List[Path]] = None) -> Iterable[Path]:
     def scan_error(error):
         raise error
 
@@ -433,7 +440,7 @@ def iter_files_recursive(root: Path, excluded_dirs: Set[Path], include_shadow: b
                 continue
             if not include_shadow and is_shadow_directory(dpath):
                 continue
-            if is_hidden(dpath):
+            if is_hidden(dpath) or is_mirror_directory(dpath):
                 continue
             if any(dpath == ex or ex in dpath.parents for ex in excluded_dirs):
                 continue
@@ -441,6 +448,8 @@ def iter_files_recursive(root: Path, excluded_dirs: Set[Path], include_shadow: b
                     and not any(parent in shadow_roots for parent in dpath.parents)):
                 shadow_roots.add(dpath)
             pruned.append(d)
+            if directories is not None:
+                directories.append(dpath)
         dirs[:] = pruned
 
         for f in files:

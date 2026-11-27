@@ -210,6 +210,49 @@ import ImageIO
         model.returnFromPool(all: true); try await settle(model)
         try check(fm.fileExists(atPath: activePair.jpeg) && fm.fileExists(atPath: activePair.raw!), "restored pool still resolves the original formal pair")
         print("PASS macOS whole-pool confirmation snapshot, all scopes, nested directories, symlink exclusion, and bulk Cmd-Z")
+        let unorganized = temp.appendingPathComponent("原始素材")
+        for branch in ["甲/子目录", "乙/子目录"] {
+            let folder = unorganized.appendingPathComponent(branch)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            for name in ["DSC_0920.JPG", "DSC_0920.NEF"] {
+                try fm.copyItem(at: originals.appendingPathComponent(name), to: folder.appendingPathComponent(name))
+            }
+        }
+        try fm.createDirectory(at: unorganized.appendingPathComponent("乙/空目录"), withIntermediateDirectories: false)
+        model.open(unorganized.path); try await settle(model)
+        let selectedBranch = model.root + "/甲"
+        try check(model.activeFolders.contains(model.root + "/乙/空目录"), "empty nested folders are browsable")
+        model.mode = "shadow"; await model.run()
+        guard let mirror = model.shadowPool else { throw FileActions.failure(model.error ?? "Missing shadow configuration") }
+        try check(model.page == 1 && model.activePhotos.count == 2 && model.poolPhotos.isEmpty && model.history.isEmpty,
+                  "shadow setup enters culling and leaves formal photos and history intact")
+        try check(fm.fileExists(atPath: mirror.path + "/乙/空目录") && model.poolFolders.contains(mirror.path + "/甲/子目录"),
+                  "empty directory tree is mirrored in the sibling")
+        model.deleteMode = "JPEG + RAW"
+        model.selectFolder(selectedBranch)
+        try check(model.photos.count == 1 && model.currentPath?.hasPrefix(selectedBranch + "/") == true,
+                  "recursive folder scope distinguishes same names")
+        let toStage = model.current!
+        model.handleKey(13); try await settle(model)
+        let relative = String(toStage.jpeg.dropFirst(model.root.count))
+        try check(fm.fileExists(atPath: mirror.path + relative) && fm.fileExists(atPath: model.root + "/乙/子目录/DSC_0920.JPG"),
+                  "W moves the intended pair to the corresponding nested shadow paths")
+        model.switchPool(true)
+        model.selectFolder(mirror.path + "/甲/子目录")
+        try check(model.photos.count == 1 && model.currentPath == mirror.path + relative, "scoped shadow pool preserves pairing")
+        model.returnFromPool(); try await settle(model)
+        try check(fm.fileExists(atPath: toStage.jpeg) && fm.fileExists(atPath: toStage.raw!) && model.photos.isEmpty,
+                  "W restores original paths and retains the browsed empty directory")
+        model.switchPool(false)
+        try check(model.selectedFolders[false] == selectedBranch && model.photos.count == 1, "formal and pending folder scopes are independent")
+        model.handleKey(13); try await settle(model)
+        model.switchPool(true)
+        let mirrorPlan = model.poolRemoval!
+        await model.removePool(mirrorPlan)
+        try check(!fm.fileExists(atPath: mirror.path) && model.error == nil && model.activePhotos.count == 1, "bulk recycle accepts only the owned sibling")
+        model.restore(); try await settle(model)
+        try check(fm.fileExists(atPath: mirror.path + relative) && model.poolPhotos.count == 1, "Cmd-Z restores the shadow pool")
+        print("PASS macOS shadow creation, duplicate filenames, directory browsing, W restore and whole-pool undo")
         print(String(format: "PASS project/WASD: loading, auto inventory, organize, persistent projects, context, A/D, W/S immediate advance %.3f ms, pool review/restore, RAW-only, Cmd-Z, sidebar", rejectTime))
         let selectedParent = temp.appendingPathComponent("scope-parent")
         let selectedChild = selectedParent.appendingPathComponent("selected-child")

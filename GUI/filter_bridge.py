@@ -1,18 +1,88 @@
 """JSON-lines adapter; the CLI remains the single organizer implementation."""
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from uuid import uuid4
 import nikonfilter as core
+
+
+def shadow_pool(root):
+    record = root / core.LOG_DIR_NAME / 'shadow.json'
+    if not record.exists():
+        return None
+    if record.resolve() != record:
+        raise ValueError('项目日志路径已被重定向。')
+    token = json.loads(record.read_text(encoding='utf-8'))['token']
+    return {'path': str(root.with_name(root.name + core.SHADOW_SUFFIX)), 'token': token}
+
+
+def mirror_path(pool, *, create=False):
+    path = Path(pool['path'])
+    marker = path / core.SHADOW_MARKER
+    if create and not path.exists():
+        path.mkdir()
+        marker.write_text(pool['token'], encoding='ascii')
+    if (path.resolve() != path or not path.is_dir() or not marker.is_file() or marker.is_symlink()
+            or marker.read_text(encoding='ascii') != pool['token']):
+        raise ValueError(f'无法验证影子待删池，请检查目录：{path}')
+    return path
+
+
+def create_shadow(root):
+    root = root.resolve()
+    if root == root.parent or core.is_mirror_directory(root):
+        raise ValueError('请选择有上级目录的原始素材文件夹。')
+    pool = shadow_pool(root)
+    if pool is None:
+        destination = root.with_name(root.name + core.SHADOW_SUFFIX)
+        if destination.exists() or destination.is_symlink():
+            raise FileExistsError(f'同名目录已存在，请先改名或移开：{destination}')
+        record = root / core.LOG_DIR_NAME / 'shadow.json'
+        if record.resolve() != record:
+            raise ValueError('项目日志路径已被重定向。')
+        record.parent.mkdir(exist_ok=True)
+        pool = {'path': str(destination), 'token': uuid4().hex}
+        with record.open('x', encoding='utf-8') as stream:
+            json.dump({'token': pool['token']}, stream)
+    destination = mirror_path(pool, create=True)
+    def fail(error):
+        raise error
+    for current, dirs, _ in os.walk(root, onerror=fail):
+        parent = Path(current)
+        dirs[:] = [name for name in dirs if name != core.LOG_DIR_NAME
+                   and not (path := parent / name).is_symlink()
+                   and not getattr(path, 'is_junction', lambda: False)()
+                   and not core.is_mirror_directory(path)]
+        target = destination / parent.relative_to(root)
+        if target.resolve() != target:
+            raise ValueError(f'影子目录中存在重定向路径：{target}')
+        target.mkdir(exist_ok=True)
+    return pool
 
 
 def scan(root, mode="normal", rules=None, travel=False):
     root = root.resolve()
+    if core.is_mirror_directory(root):
+        raise ValueError('这是影子待删池，请打开与它并列的原始素材文件夹。')
     # The selected directory is the project boundary. Pair discovery must never
     # silently broaden the scan or change the root used for subsequent moves.
     shadow_roots = set()
-    files = sorted((p for p in core.iter_files_recursive(root, set(), shadow_roots=shadow_roots)
-                    if p.is_file() and not p.is_symlink()), key=lambda p: str(p).lower())
+    directories = []
+    files = list(core.iter_files_recursive(root, set(), shadow_roots=shadow_roots, directories=directories))
+    mirror = shadow_pool(root)
+    external = None
+    if mirror:
+        try:
+            external = mirror_path(mirror)
+        except (OSError, ValueError):
+            pass  # A removed or replaced pool must not block reading the original project.
+        if external:
+            shadow_roots.add(external)
+            directories.append(external)
+            files.extend(core.iter_files_recursive(external, set(), directories=directories))
+    files = sorted((p for p in files if p.is_file() and not p.is_symlink()), key=lambda p: str(p).lower())
     file_set = set(files)
     jpgs = [p for p in files if p.suffix.lower() in core.JPEG_EXT]
     raws = [p for p in files if p.suffix.lower() in core.RAW_PHOTO_EXT]
@@ -53,12 +123,17 @@ def scan(root, mode="normal", rules=None, travel=False):
     def mapped(path, batch):
         if not path: return None
         for e in batch['entries']:
-            if e['original'] == path and Path(e['trash']).is_file():
+            if e['original'] == path and Path(e['trash']) in file_set:
                 return Path(e['trash'])
         original = Path(path)
-        return original if original.is_file() else moved_paths.get(original, original)
+        actual = original if original in file_set else moved_paths.get(original)
+        return actual if actual in file_set else None
+    def in_pool(path):
+        if external and path.is_relative_to(external):
+            return True
+        return any(core.is_shadow_directory(Path(part)) for part in path.relative_to(root).parts)
     def shadow(path):
-        return any(core.is_shadow_directory(Path(part)) for part in path.relative_to(root).parts[:-1])
+        return in_pool(path.parent)
     for batch in batches:
         photo = batch['photo']
         j, r = mapped(photo['jpeg'], batch), mapped(photo.get('raw'), batch)
@@ -70,6 +145,9 @@ def scan(root, mode="normal", rules=None, travel=False):
     shadow_aliases = {}
     for path in jpgs + raws:
         if shadow(path):
+            if external and path.is_relative_to(external):
+                shadow_aliases[root / path.relative_to(external)] = path
+                continue
             relative = path.relative_to(root)
             parts = [part[1:] if core.is_shadow_directory(Path(part)) else part for part in relative.parts]
             shadow_aliases[root.joinpath(*parts)] = path
@@ -160,7 +238,15 @@ def scan(root, mode="normal", rules=None, travel=False):
                    if (staged := Path(entry['trash'])) in file_set and shadow(staged)]
         if entries:
             visible_batches.append({**batch, 'entries': entries})
-    return {'root': str(root), 'pending': pending, 'photos': active, 'rawPhotos': active_raw, 'poolPhotos': pool, 'poolRawPhotos': pool_raw, 'poolBatches': visible_batches, 'poolDirectories': sorted(map(str, shadow_roots)), 'counts': counts, 'formats': formats, 'sizes': sizes, 'mediaCount': media_count, 'organized': organized, 'preview': preview, 'paired': sum(p['raw'] is not None for p in active), 'orphanRaw': sum(not p['jpeg'] for p in active_raw), 'ambiguous': sum(p['status']=='配对歧义' for p in active), 'history': history}
+    active_folders, pool_folders = [], set()
+    for directory in sorted(directories):
+        if in_pool(directory):
+            pool_folders.add(directory)
+            pool_folders.update(parent for parent in directory.parents
+                                if parent != root and parent.is_relative_to(root))
+        else:
+            active_folders.append(str(directory))
+    return {'root': str(root), 'pending': pending, 'photos': active, 'rawPhotos': active_raw, 'poolPhotos': pool, 'poolRawPhotos': pool_raw, 'poolBatches': visible_batches, 'poolDirectories': sorted(map(str, shadow_roots)), 'shadowPool': mirror, 'activeFolders': active_folders, 'poolFolders': sorted(map(str, pool_folders)), 'counts': counts, 'formats': formats, 'sizes': sizes, 'mediaCount': media_count, 'organized': organized, 'preview': preview, 'paired': sum(p['raw'] is not None for p in active), 'orphanRaw': sum(not p['jpeg'] for p in active_raw), 'ambiguous': sum(p['status']=='配对歧义' for p in active), 'history': history}
 
 
 def emit(data):
@@ -175,6 +261,9 @@ def main():
     rules = set(req.get('rules', ['1', '2', '3', '4']))
     travel = req.get('travel', False)
     if action == 'scan':
+        emit(scan(root, mode, rules, travel))
+    elif action == 'shadow':
+        create_shadow(root)
         emit(scan(root, mode, rules, travel))
     elif action == 'preview':
         emit(core.preview_scan(root, core.resolve_effective_rules(mode, rules), travel))

@@ -4,6 +4,30 @@ import Darwin
 
 func isShadowName(_ name: String) -> Bool { ["DJpg", "DRaw", "DJpeg", "DJPEG"].contains { name.hasPrefix($0) } }
 
+struct ShadowPool: Codable, Equatable {
+    let path: String
+    let token: String
+
+    func validate(root: String, create: Bool = false) throws {
+        let fm = FileManager.default
+        let original = URL(fileURLWithPath: root, isDirectory: true)
+        let expected = original.deletingLastPathComponent().appendingPathComponent(original.lastPathComponent + " - 待删池")
+        let marker = expected.appendingPathComponent(".zfilter-shadow")
+        guard expected.path == path else { throw FileActions.failure("影子待删池路径与项目不符。") }
+        try FileActions.checkPhysicalPath(path)
+        if create && !fm.fileExists(atPath: path) {
+            try fm.createDirectory(at: expected, withIntermediateDirectories: false)
+            do { try Data(token.utf8).write(to: marker, options: .withoutOverwriting) }
+            catch { _ = rmdir(path); throw error }
+        }
+        let values = try marker.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true,
+              try String(contentsOf: marker, encoding: .utf8) == token else {
+            throw FileActions.failure("无法验证影子待删池，请检查目录：\(path)")
+        }
+    }
+}
+
 struct PoolBatch: Codable, Identifiable {
     var id: String
     var photo: Photo
@@ -70,6 +94,22 @@ enum FileActions {
         try JSONEncoder().encode(value).write(to: url, options: .atomic)
     }
     static func poolURL(_ root: String) -> URL { URL(fileURLWithPath: root).appendingPathComponent(".nikonfilter_logs/pool.json") }
+    // Check existing ancestors too, so creating a new branch cannot follow a redirected parent.
+    static func checkPhysicalPath(_ path: String) throws {
+        let fm = FileManager.default
+        var current = path
+        while !fm.fileExists(atPath: current) {
+            if (try? fm.destinationOfSymbolicLink(atPath: current)) != nil {
+                throw failure("路径指向符号链接：\(current)")
+            }
+            let parent = (current as NSString).deletingLastPathComponent
+            guard !parent.isEmpty, parent != current else { throw failure("路径无法访问：\(path)") }
+            current = parent
+        }
+        guard let resolved = realpath(current, nil) else { throw failure("路径无法访问：\(path)") }
+        defer { free(resolved) }
+        guard String(cString: resolved) == current else { throw failure("路径已重定向：\(current)") }
+    }
     static func poolDirectory(for path: String, root: String) -> String? {
         let prefix = root.hasSuffix("/") ? root : root + "/"
         guard path.hasPrefix(prefix) else { return nil }
@@ -96,25 +136,35 @@ enum FileActions {
         if !reserved.contains(url.path), !FileManager.default.fileExists(atPath: url.path) { return url }
         return url.deletingPathExtension().appendingPathExtension(UUID().uuidString + "." + url.pathExtension)
     }
-    static func stage(_ photo: Photo, paths: [String], root: String) throws -> PoolBatch {
+    static func stage(_ photo: Photo, paths: [String], root: String, shadow: ShadowPool? = nil) throws -> PoolBatch {
         let fm = FileManager.default
         var batch = PoolBatch(id: UUID().uuidString, photo: photo, entries: [])
         let journal = poolURL(root)
+        if shadow != nil { try checkPhysicalPath(journal.path) }
         var batches = try read([PoolBatch].self, journal, default: [])
         var reserved = Set(batches.flatMap { $0.entries.map(\.trash) })
         for path in paths {
             let source = URL(fileURLWithPath: path)
             let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else { throw failure("文件已变化，请刷新后重试") }
-            let destination = unique(try shadowDestination(path, root: root, isRaw: path == photo.raw), reserved: reserved)
+            let preferred: URL
+            if let shadow {
+                guard path.hasPrefix(root + "/"), poolDirectory(for: path, root: root) == nil else { throw failure("文件不在正式池中") }
+                try checkPhysicalPath(path)
+                preferred = URL(fileURLWithPath: shadow.path).appendingPathComponent(String(path.dropFirst(root.count + 1)))
+                try checkPhysicalPath(preferred.path)
+            } else { preferred = try shadowDestination(path, root: root, isRaw: path == photo.raw) }
+            let destination = unique(preferred, reserved: reserved)
             reserved.insert(destination.path)
             batch.entries.append(TrashEntry(original: path, trash: destination.path))
         }
+        try shadow?.validate(root: root, create: true)
         batches.append(batch)
         try save(batches, journal)
         var moved: [TrashEntry] = []
         do {
             for entry in batch.entries {
+                if shadow != nil { try checkPhysicalPath(entry.trash) }
                 try fm.createDirectory(atPath: URL(fileURLWithPath: entry.trash).deletingLastPathComponent().path, withIntermediateDirectories: true)
                 guard !fm.fileExists(atPath: entry.trash) else { throw failure("待删池目标已存在") }
                 try fm.moveItem(atPath: entry.original, toPath: entry.trash)
@@ -128,15 +178,15 @@ enum FileActions {
         }
         return batch
     }
-    static func restorePool(_ ids: Set<String>, root: String) throws {
-        try restorePool(root: root, ids: ids, paths: nil)
+    static func restorePool(_ ids: Set<String>, root: String, shadow: ShadowPool? = nil) throws {
+        try restorePool(root: root, shadow: shadow, ids: ids, paths: nil)
     }
 
-    static func restorePool(paths: Set<String>, root: String) throws {
-        try restorePool(root: root, ids: nil, paths: paths)
+    static func restorePool(paths: Set<String>, root: String, shadow: ShadowPool? = nil) throws {
+        try restorePool(root: root, shadow: shadow, ids: nil, paths: paths)
     }
 
-    private static func restorePool(root: String, ids: Set<String>?, paths: Set<String>?) throws {
+    private static func restorePool(root: String, shadow: ShadowPool?, ids: Set<String>?, paths: Set<String>?) throws {
         let fm = FileManager.default, journal = poolURL(root)
         var batches = try read([PoolBatch].self, journal, default: [])
         func normalized(_ path: String) -> String { URL(fileURLWithPath: path).resolvingSymlinksInPath().path }
@@ -147,6 +197,10 @@ enum FileActions {
         let base = URL(fileURLWithPath: root).standardizedFileURL
         let recorded = Set(selected.map { normalized($0.trash) })
         for path in (paths ?? []).sorted() where !recorded.contains(normalized(path)) {
+            if let shadow, path.hasPrefix(shadow.path + "/") {
+                selected.append(TrashEntry(original: root + String(path.dropFirst(shadow.path.count)), trash: path))
+                continue
+            }
             let source = URL(fileURLWithPath: path).standardizedFileURL
             guard source.path.hasPrefix(base.path+"/") else { throw failure("待删文件不在项目内：\(path)") }
             var parts = source.path.dropFirst(base.path.count+1).split(separator: "/").map(String.init)
@@ -163,7 +217,14 @@ enum FileActions {
             let source = URL(fileURLWithPath: entry.trash), destination = URL(fileURLWithPath: entry.original)
             let sourceInProject = source.deletingLastPathComponent().resolvingSymlinksInPath().path+"/"
             let destinationInProject = destination.deletingLastPathComponent().resolvingSymlinksInPath().path+"/"
-            guard sourceInProject.hasPrefix(realBase), destinationInProject.hasPrefix(realBase),
+            var allowedSource = sourceInProject.hasPrefix(realBase)
+            if let shadow, entry.trash.hasPrefix(shadow.path + "/") {
+                if fm.fileExists(atPath: entry.trash) { try shadow.validate(root: root) }
+                try checkPhysicalPath(entry.trash)
+                try checkPhysicalPath(entry.original)
+                allowedSource = true
+            }
+            guard allowedSource, destinationInProject.hasPrefix(realBase),
                   (try? source.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
                 throw failure("恢复路径超出项目目录或为符号链接。")
             }
@@ -183,8 +244,9 @@ enum FileActions {
             }
         }
     }
-    static func trash(_ paths: [String], journal: URL, poolRoot: String? = nil) throws -> Int {
+    static func trash(_ paths: [String], journal: URL, poolRoot: String? = nil, shadow: ShadowPool? = nil) throws -> Int {
         func validatePoolDirectory(_ path: String, root: String) throws {
+            if let shadow, shadow.path == path { try shadow.validate(root: root); return }
             let url = URL(fileURLWithPath: path, isDirectory: true)
             let properties = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard poolDirectory(for: path, root: root) == path,

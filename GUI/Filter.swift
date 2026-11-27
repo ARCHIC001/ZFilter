@@ -32,6 +32,8 @@ struct RunRecord: Codable, Identifiable {
 struct Library: Codable {
     var rawPhotos: [Photo]?; var poolRawPhotos: [Photo]?
     var poolDirectories: [String]?
+    var shadowPool: ShadowPool?
+    var activeFolders: [String]?; var poolFolders: [String]?
     var root: String; var pending: Int; var photos: [Photo]; var poolPhotos: [Photo]; var poolBatches: [PoolBatch]; var counts: [String: Int]; var sizes: [String: Int64]; var mediaCount: Int; var formats: [String: Int]; var preview: [String: Int]; var organized: Bool; var paired: Int; var orphanRaw: Int; var ambiguous: Int; var history: [RunRecord]
 }
 struct TrashEntry: Codable { var original: String; var trash: String }
@@ -39,6 +41,21 @@ struct PoolRemoval: Identifiable, Equatable {
     let root: String
     let directories: [String]
     var id: String { root }
+}
+
+struct PhotoFolder: Identifiable {
+    let id: String
+    let children: [PhotoFolder]?
+    var name: String { (id as NSString).lastPathComponent }
+
+    static func tree(_ paths: [String]) -> [PhotoFolder] {
+        let parents = Dictionary(grouping: paths) { ($0 as NSString).deletingLastPathComponent }
+        let known = Set(paths)
+        func node(_ path: String) -> PhotoFolder {
+            PhotoFolder(id: path, children: parents[path]?.map(node))
+        }
+        return paths.filter { !known.contains(($0 as NSString).deletingLastPathComponent) }.map(node)
+    }
 }
 
 enum ProjectReadState { case ready, loading, failed }
@@ -52,6 +69,10 @@ enum ProjectReadState { case ready, loading, failed }
     @Published var poolRawPhotos: [Photo] = []
     @Published var poolBatches: [PoolBatch] = []
     @Published private(set) var poolDirectories: [String] = []
+    @Published private(set) var shadowPool: ShadowPool?
+    @Published private(set) var activeFolders: [String] = []
+    @Published private(set) var poolFolders: [String] = []
+    @Published private(set) var selectedFolders: [Bool: String] = [:]
     @Published private(set) var removingPool = false
     @Published var showPool = false
     var poolRemoval: PoolRemoval? {
@@ -69,9 +90,23 @@ enum ProjectReadState { case ready, loading, failed }
     }
     func scopedPhotos(pool: Bool, scope: String? = nil) -> [Photo] {
         let scope = scope ?? deleteMode
-        if scope == "仅 RAW" { return pool ? poolRawPhotos : activeRawPhotos }
-        let jpeg = pool ? poolPhotos : activePhotos
-        return scope == "JPEG + RAW" ? jpeg.filter { $0.raw != nil && $0.status == "已配对" } : jpeg
+        let rows = scope == "仅 RAW" ? (pool ? poolRawPhotos : activeRawPhotos) : (pool ? poolPhotos : activePhotos)
+        let folder = selectedFolders[pool].map { $0 + "/" }
+        if folder == nil && scope != "JPEG + RAW" { return rows }
+        return rows.filter { photo in
+            if scope == "JPEG + RAW" && (photo.raw == nil || photo.status != "已配对") { return false }
+            guard let folder else { return true }
+            return (scope == "仅 RAW" ? photo.raw ?? "" : photo.jpeg).hasPrefix(folder)
+        }
+    }
+    var currentFolderTitle: String { selectedFolders[showPool].map { ($0 as NSString).lastPathComponent } ?? "全部文件夹" }
+    func selectFolder(_ path: String?) {
+        guard !working, path != selectedFolders[showPool] else { return }
+        let previous = currentPath
+        selectedFolders[showPool] = path
+        index = previous.flatMap { value in photos.firstIndex { displayPath($0) == value } } ?? 0
+        filmstripDepartures = []
+        prefetch()
     }
     func displayPath(_ photo: Photo) -> String { deleteMode == "仅 RAW" ? photo.raw ?? "" : photo.jpeg }
     var currentPath: String? { current.map(displayPath) }
@@ -251,11 +286,12 @@ enum ProjectReadState { case ready, loading, failed }
         busy = true; projectReadState = .loading; status = "正在读取素材、统计格式并验证配对…"
         focusTracking = false; viewportLabel = "适应窗口"; filmstripDepartures = []; poolSelections = [:]; resetBursts()
         root = URL(fileURLWithPath: path).resolvingSymlinksInPath().path; preview = [:]; activePhotos = []; activeRawPhotos = []; poolPhotos = []; poolRawPhotos = []; poolBatches = []; counts = [:]; sizes = [:]; mediaCount = 0; formats = [:]; history = []; index = 0; departed = []; poolDeparted = []; showPool = false; organized = false; pendingFiles = 0; error = nil; previewTask?.cancel()
-        poolDirectories = []
+        poolDirectories = []; shadowPool = nil; activeFolders = []; poolFolders = []; selectedFolders = [:]
+        if mode == "shadow" { mode = "normal" }
         Task { await loadLibrary() }
     }
     func request(_ action: String, rootOverride: String? = nil, timeout: TimeInterval? = nil) async throws -> [String: Any] {
-        let req: [String: Any] = ["action": action, "root": rootOverride ?? root, "mode": mode, "rules": Array(rules), "travel": travel, "dry": dry]
+        let req: [String: Any] = ["action": action, "root": rootOverride ?? root, "mode": mode == "shadow" ? "normal" : mode, "rules": Array(rules), "travel": travel, "dry": dry]
         let input = try JSONSerialization.data(withJSONObject: req)
         let script = bridgeOverrideForTests ?? Bundle.main.resourceURL!.appendingPathComponent("filter_bridge.py").path
         return try await withCheckedThrowingContinuation { continuation in
@@ -304,6 +340,10 @@ enum ProjectReadState { case ready, loading, failed }
         let old = currentPath
         root = lib.root; activePhotos = lib.photos; activeRawPhotos = lib.rawPhotos ?? lib.photos.filter { $0.raw != nil }; poolPhotos = lib.poolPhotos; poolRawPhotos = lib.poolRawPhotos ?? lib.poolPhotos.filter { $0.raw != nil }; poolBatches = lib.poolBatches
         poolDirectories = lib.poolDirectories ?? []
+        shadowPool = lib.shadowPool; activeFolders = lib.activeFolders ?? []; poolFolders = lib.poolFolders ?? []
+        if projectReadState == .loading && shadowPool != nil { mode = "shadow" }
+        if let path = selectedFolders[false], !activeFolders.contains(path) { selectedFolders[false] = nil }
+        if let path = selectedFolders[true], !poolFolders.contains(path) { selectedFolders[true] = nil }
         removeAssets(departed,pool: false); removeAssets(poolDeparted,pool: true)
         history = lib.history; paired = lib.paired; orphanRaw = lib.orphanRaw; ambiguous = lib.ambiguous
         counts = lib.counts; sizes = lib.sizes; mediaCount = lib.mediaCount; formats = lib.formats; organized = lib.organized; pendingFiles = lib.pending; preview = lib.preview
@@ -352,7 +392,7 @@ enum ProjectReadState { case ready, loading, failed }
         if path == root {
             resetBursts()
             previewTask?.cancel(); root = ""; projectReadState = .ready; activePhotos = []; activeRawPhotos = []; poolPhotos = []; poolRawPhotos = []; poolBatches = []; history = []
-            poolDirectories = []
+            poolDirectories = []; shadowPool = nil; activeFolders = []; poolFolders = []; selectedFolders = [:]
             counts = [:]; sizes = [:]; mediaCount = 0; formats = [:]; preview = [:]; index = 0; pendingFiles = 0; organized = false
             departed = []; poolDeparted = []; showPool = false; error = nil
             status = "已移除项目记录，素材和恢复日志保留在原文件夹。"
@@ -384,7 +424,9 @@ enum ProjectReadState { case ready, loading, failed }
         }
     }
     func schedulePreview() {
-        previewTask?.cancel(); preview = [:]
+        previewTask?.cancel()
+        guard mode != "shadow" else { return }
+        preview = [:]
         previewTask = Task { try? await Task.sleep(nanoseconds: 180_000_000); guard !Task.isCancelled else { return }; await preflight() }
     }
     func preflight() async {
@@ -395,6 +437,17 @@ enum ProjectReadState { case ready, loading, failed }
     }
     func run(_ undo: Bool = false) async {
         guard !root.isEmpty, !working else { return }
+        if mode == "shadow" && !undo {
+            busy = true; status = "正在同步影子目录…"
+            defer { busy = false }
+            do {
+                try apply(await request("shadow"))
+                page = 1; showPool = false; index = 0
+                status = "影子目录已就绪"
+                prefetch()
+            } catch { self.error = error.localizedDescription }
+            return
+        }
         busy = true; progress = 0; status = undo ? "正在撤销整理…" : "正在整理素材…"
         defer { busy = false }
         do {
@@ -524,7 +577,7 @@ enum ProjectReadState { case ready, loading, failed }
         if deleteMode == "JPEG + RAW" && (photo.raw == nil || photo.status != "已配对") { error = "当前照片没有经过验证的配对，请刷新后重试。"; return }
         let paths = selectedPaths(photo), display = displayPath(photo)
         guard !paths.isEmpty else { status = "没有可处理的 RAW"; return }
-        let projectRoot = root, trashJournal = journal
+        let projectRoot = root, trashJournal = journal, mirror = shadowPool
         let wasPool = showPool
         if filmstripVisible {
             let departure = FilmstripDeparture(path: display, image: ThumbnailStore.shared.cached(display), kind: stage ? .pool : .trash)
@@ -541,10 +594,19 @@ enum ProjectReadState { case ready, loading, failed }
             }
             do {
                 if stage {
-                    let batch = try await FileActions.perform { try FileActions.stage(photo, paths: paths, root: projectRoot) }
+                    let batch = try await FileActions.perform { try FileActions.stage(photo, paths: paths, root: projectRoot, shadow: mirror) }
                     poolBatches.append(batch)
-                    let stagedDirectories = batch.entries.compactMap { FileActions.poolDirectory(for: $0.trash, root: projectRoot) }
+                    let stagedDirectories = mirror.map { [$0.path] } ?? batch.entries.compactMap { FileActions.poolDirectory(for: $0.trash, root: projectRoot) }
                     poolDirectories = Set(poolDirectories + stagedDirectories).sorted()
+                    var folders = Set(poolFolders)
+                    for entry in batch.entries {
+                        var parent = (entry.trash as NSString).deletingLastPathComponent
+                        while parent == mirror?.path || parent.hasPrefix((mirror?.path ?? projectRoot) + "/") {
+                            folders.insert(parent)
+                            parent = (parent as NSString).deletingLastPathComponent
+                        }
+                    }
+                    poolFolders = folders.sorted()
                     var staged = photo
                     staged.jpeg = ""; staged.raw = nil
                     for entry in batch.entries {
@@ -598,9 +660,9 @@ enum ProjectReadState { case ready, loading, failed }
         defer { removingPool = false }
         let result: Result<Int, Error>
         do {
-            let log = journal
+            let log = journal, mirror = shadowPool
             result = .success(try await FileActions.perform {
-                try FileActions.trash(confirmed.directories, journal: log, poolRoot: confirmed.root)
+                try FileActions.trash(confirmed.directories, journal: log, poolRoot: confirmed.root, shadow: mirror)
             })
         } catch { result = .failure(error) }
         trash = (try? FileActions.read([[TrashEntry]].self, journal, default: [])) ?? []
@@ -650,13 +712,13 @@ enum ProjectReadState { case ready, loading, failed }
         let ids = Set(poolBatches.map(\.id))
         let paths = current.map { Set(selectedPaths($0)) } ?? []
         guard all ? !ids.isEmpty : showPool && !paths.isEmpty else { return }
-        let projectRoot = root
+        let projectRoot = root, mirror = shadowPool
         busy = true
         Task {
             do {
                 try await FileActions.perform {
-                    if all { try FileActions.restorePool(ids, root: projectRoot) }
-                    else { try FileActions.restorePool(paths: paths, root: projectRoot) }
+                    if all { try FileActions.restorePool(ids, root: projectRoot, shadow: mirror) }
+                    else { try FileActions.restorePool(paths: paths, root: projectRoot, shadow: mirror) }
                 }
                 departed = []; poolDeparted = []
             }
@@ -675,6 +737,7 @@ struct ContentView: View {
     @State private var editedDate = Date()
     @State private var confirmUndo = false
     @State private var deletingPool: PoolRemoval?
+    @State private var choosingFolder = false
     var accent: Color { Color(nsColor: FilterPalette.blue.accent(dark: colorScheme == .dark)) }
     var accentInk: Color { FilterPalette.blue.ink(dark: colorScheme == .dark) }
     var body: some View {
@@ -724,7 +787,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 7) {
                         ForEach(plan.directories, id: \.self) { path in
-                            Label(String(path.dropFirst(plan.root.count + (plan.root.hasSuffix("/") ? 0 : 1))), systemImage: "folder")
+                            Label(path, systemImage: "folder")
                                 .font(.callout).textSelection(.enabled)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -907,7 +970,7 @@ struct ContentView: View {
                 Text("递归读取全部子文件夹；下列为正式池统计，待删池另计。整理输出位于所选目录内。").font(.system(size: 11)).foregroundStyle(.secondary)
                 HStack(spacing: 16) { stat("JPEG", m.counts["jpg"] ?? 0, "photo", bytes: m.sizes["jpg"],hue: .green); stat("RAW", m.counts["raw"] ?? 0, "camera.aperture", bytes: m.sizes["raw"],hue: .purple); stat("视频 / RAW 视频", (m.counts["video"] ?? 0) + (m.counts["rawvideo"] ?? 0), "video", bytes: (m.sizes["video"] ?? 0)+(m.sizes["rawvideo"] ?? 0),hue: .orange); stat("已验证配对", m.paired, "link",hue: .cyan) }
                 HStack(spacing: 10) { ForEach(m.formats.keys.sorted(), id: \.self) { key in Text("\(key)  \(m.formats[key] ?? 0)").font(.system(size: 10, weight: .medium, design: .monospaced)).padding(.horizontal, 12).padding(.vertical, 7).background(Color.primary.opacity(0.06), in: Capsule()) } }
-                if m.organized {
+                if m.organized && m.mode != "shadow" {
                     VStack(alignment: .leading, spacing: 14) {
                         Label("当前无新增待整理素材", systemImage: "checkmark.seal.fill").foregroundStyle(accent).font(.headline)
                         if let record = m.history.first { Text(record.mode + " · " + record.timestamp.replacingOccurrences(of: "T", with: "  ")).font(.system(size: 12)).foregroundStyle(.secondary) }
@@ -918,7 +981,11 @@ struct ContentView: View {
                 Group {
                 VStack(alignment: .leading, spacing: 20) {
                     Text("整理方式").font(.system(size: 18, weight: .medium))
-                    Picker("模式", selection: $m.mode) { Text("普通模式").tag("normal"); Text("RED 模式").tag("red"); Text("自定义规则").tag("custom") }.pickerStyle(.segmented)
+                    Picker("模式", selection: $m.mode) { Text("普通模式").tag("normal"); Text("RED 模式").tag("red"); Text("自定义规则").tag("custom"); Text("影子模式").tag("shadow") }.pickerStyle(.segmented)
+                    if m.mode == "shadow" {
+                        Text("在素材目录旁复制空目录结构。选片时按 W，照片会进入影子待删池中的对应目录。").font(.system(size: 12)).foregroundStyle(.secondary)
+                        if let shadow = m.shadowPool { Text(shadow.path).font(.caption).textSelection(.enabled) }
+                    } else {
                     Text(m.mode == "red" ? "JPEG / RAW 分离 · 普通视频归档 · NEV 改为 R3D · 代理与转码目录" : m.mode == "custom" ? "按需要启用规则；同时选择 4 和 5 时，RED 规则优先。" : "JPEG / RAW 分离 · 普通视频归档 · NEV 与同名 MP4 代理分类").font(.system(size: 12)).foregroundStyle(.secondary)
                     if m.mode == "custom" {
                         ForEach(Array(zip(["1", "2", "3", "4", "5"], ["JPEG 照片", "RAW 照片", "普通视频", "NEV 与代理", "RED / R3D 与代理"])), id: \.0) { key, title in Toggle("\(key) · \(title)", isOn: Binding(get: { m.rules.contains(key) }, set: { if $0 { m.rules.insert(key) } else { m.rules.remove(key) } })).toggleStyle(.checkbox) }
@@ -926,7 +993,13 @@ struct ContentView: View {
                     Divider().overlay(Color.primary.opacity(0.08))
                     Toggle(isOn: $m.travel) { VStack(alignment: .leading, spacing: 5) { Text("旅行模式").font(.system(size: 13, weight: .medium)); Text("按 EXIF 拍摄日期整理 JPEG 与 RAW；无日期素材保留在分类根目录。") .font(.system(size: 11)).foregroundStyle(.secondary) } }.toggleStyle(.switch)
                     Toggle(isOn: $m.dry) { VStack(alignment: .leading, spacing: 5) { Text("演练模式").font(.system(size: 13, weight: .medium)); Text("查看执行结果，不移动文件，不写入整理日志。") .font(.system(size: 11)).foregroundStyle(.secondary) } }.toggleStyle(.switch)
+                    }
                 }.padding(24).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 18)).disabled(m.busy)
+                if m.mode == "shadow" {
+                    Button { Task { await m.run() } } label: {
+                        Label(m.shadowPool == nil ? "创建影子待删池并选片" : "同步影子目录并选片", systemImage: "folder.badge.plus").padding(6)
+                    }.buttonStyle(.glassProminent).tint(accent).disabled(m.working)
+                } else {
                 if !m.preview.isEmpty {
                     VStack(alignment: .leading, spacing: 9) { Text("整理预览").font(.headline); Text("待检查文件 \(m.preview["total_scanned"] ?? 0) · 预计处理 \(planned) · 不支持 \(m.preview["unsupported"] ?? 0) · 按规则跳过 \(m.preview["will_skip_by_rule"] ?? 0)"); if m.travel { Text("日期分组 \(m.preview["travel_date_folders"] ?? 0) · 无日期 JPEG \(m.preview["travel_jpg_undated"] ?? 0) / RAW \(m.preview["travel_raw_undated"] ?? 0)") } }.font(.system(size: 12)).foregroundStyle(.secondary)
                 }
@@ -936,6 +1009,7 @@ struct ContentView: View {
                     Spacer()
                     if !m.history.isEmpty { Button("撤销上次整理") { confirmUndo = true }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary) }
                 }.disabled(m.working || m.root.isEmpty)
+                }
                 }
                 if m.busy { HStack { ProgressView().controlSize(.small); Text(m.status).font(.system(size: 11)) }; ProgressView(value: m.progress).tint(accent) }
             }.padding(36)
@@ -1070,6 +1144,7 @@ struct ContentView: View {
                 Text(m.currentPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "沉浸选片").font(.system(size: 14,weight: .medium)).lineLimit(1).truncationMode(.middle)
                 Text((m.currentProjectOffline ? "项目离线 · " : m.viewingLabel+" · ")+m.viewportLabel).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
             }
+            folderPicker
             Spacer(minLength: 8)
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
@@ -1102,6 +1177,28 @@ struct ContentView: View {
                 }
             }.tint(Color.primary)
         }.padding(.horizontal,12).padding(.vertical,10)
+    }
+    var folderPicker: some View {
+        Button { choosingFolder.toggle() } label: {
+            Label(m.currentFolderTitle, systemImage: "folder").lineLimit(1).frame(maxWidth: 108)
+        }.buttonStyle(.glass).disabled(m.root.isEmpty || m.working)
+            .help(m.selectedFolders[m.showPool] ?? "按目录选片")
+            .popover(isPresented: $choosingFolder) {
+                let tree = PhotoFolder.tree(m.showPool ? m.poolFolders : m.activeFolders)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(m.showPool ? "待删池目录" : "项目目录").font(.headline).padding(.horizontal, 10)
+                    Button { m.selectFolder(nil); choosingFolder = false } label: {
+                        Label("全部文件夹", systemImage: m.selectedFolders[m.showPool] == nil ? "checkmark" : "folder")
+                    }.buttonStyle(.plain).padding(.horizontal, 10)
+                    List {
+                        OutlineGroup(tree, children: \.children) { folder in
+                            Button { m.selectFolder(folder.id); choosingFolder = false } label: {
+                                Label(folder.name, systemImage: m.selectedFolders[m.showPool] == folder.id ? "checkmark" : "folder")
+                            }.buttonStyle(.plain).help(folder.id)
+                        }
+                    }.listStyle(.plain)
+                }.padding(.vertical, 12).frame(width: 325, height: 355)
+            }
     }
     func poolTab(_ title: String, count: Int, pool: Bool) -> some View {
         let active = m.showPool == pool
