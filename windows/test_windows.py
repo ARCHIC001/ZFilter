@@ -9,10 +9,10 @@ from time import monotonic, sleep
 from unittest.mock import patch
 
 from PIL import Image
-from PySide6.QtCore import QPoint, QSettings, QSize, QTimer, Qt
+from PySide6.QtCore import QPoint, QRect, QSettings, QSize, QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QBoxLayout, QDialogButtonBox, QMessageBox, QToolButton, QTreeWidget, QTreeWidgetItemIterator
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox, QToolButton, QTreeWidget, QTreeWidgetItemIterator
 
 from windows.app import Window
 from windows import media, operations as ops
@@ -154,11 +154,13 @@ def test_workflow(base, raw, screenshot):
         wait_for(lambda: ui.frame is not None,'paired JPEG decode')
         assert ui.path.endswith('照片01.JPG') and len(ui.photos) == 1
         initial_theme = ui.dark
-        for width,direction in [(980,QBoxLayout.Direction.TopToBottom),(1320,QBoxLayout.Direction.LeftToRight)]:
+        for width in (980,1320):
             ui.resize(width,720)
             QTest.qWait(40)
-            assert ui.viewer_header_layout.direction() == direction
             assert ui.folders_button.width() >= 154 and ui.folders_button.height() == ui.pool_buttons[0].height()
+            for widget in (ui.folders_button,*ui.pool_buttons,ui.fullscreen_button):
+                actual = QRect(widget.mapTo(ui.viewer_header,QPoint()),widget.size())
+                assert ui.viewer_header.rect().contains(actual), (width,actual,ui.viewer_header.rect())
             assert ui.folders_button.iconSize() == QSize(18,18) and not ui.folders_button.icon().isNull()
             choose_folder(ui,None)
             ui.brand.click()

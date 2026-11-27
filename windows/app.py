@@ -331,6 +331,7 @@ class Window(QMainWindow):
         layout.setContentsMargins(12,12,12,12)
         layout.setSpacing(10)
         self.viewer_header = QWidget()
+        self.viewer_header.setMinimumWidth(1)
         self.viewer_header_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom,self.viewer_header)
         self.viewer_header_layout.setContentsMargins(0,0,0,0)
         self.viewer_header_layout.setSpacing(7)
