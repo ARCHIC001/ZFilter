@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QApplication, QAbstractButton, QBoxLayout, QButtonGroup, QCheckBox, QDateTimeEdit, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QStackedWidget, QToolButton, QVBoxLayout, QWidget,
+    QStackedWidget, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 import nikonfilter as core
@@ -24,7 +24,7 @@ from windows.icon import SIZE as ICON_SIZE, fluent_icon
 from windows.viewer import Departure, Histogram, Material, PhotoView, Scrubber, Tile
 
 ICON = Path(__file__).resolve().parents[1] / 'docs/images/zfilter-icon.png'
-MODES = ('normal', 'red', 'custom')
+MODES = ('normal', 'red', 'custom', 'shadow')
 RULES = ('JPEG 照片', 'RAW 照片', '普通视频', 'NEV 与代理', 'RED / R3D 与代理')
 COLORS = ('#1dcd3a', '#ffbb10', '#fa382e')
 POOL_COLORS = ('#1dcd3a', '#ff844a')
@@ -134,6 +134,7 @@ class Window(QMainWindow):
         self.index = 0
         self.photos = []
         self.pool_selection = {}
+        self.selected_folders = {}
         self.burst_ids = {}
         self.bursts_scanned = False
         self.bursts_scanning = False
@@ -282,7 +283,7 @@ class Window(QMainWindow):
         controls.addWidget(label('整理方式','section'))
         modes = QHBoxLayout()
         self.mode_buttons = QButtonGroup(self)
-        for index, title in enumerate(('普通模式','RED 模式','自定义规则')):
+        for index, title in enumerate(('普通模式','RED 模式','自定义规则','影子模式')):
             toggle = button(title,self.change_rules,checkable=True)
             self.mode_buttons.addButton(toggle,index)
             modes.addWidget(toggle)
@@ -337,6 +338,9 @@ class Window(QMainWindow):
         title.addWidget(self.photo_title)
         title.addWidget(self.photo_subtitle)
         tools.addLayout(title, 1)
+        self.folders_button = button('全部文件夹',self.choose_photo_folder)
+        self.folders_button.setFixedWidth(115)
+        tools.addWidget(self.folders_button)
         self.pool_buttons = []
         for index, title in enumerate(('正式池','待删池')):
             toggle = button(title, partial(self.switch_pool,bool(index)), checkable=True)
@@ -498,7 +502,8 @@ class Window(QMainWindow):
 
     @property
     def options(self):
-        return MODES[self.mode_buttons.checkedId()], [str(i) for i,c in enumerate(self.rule_checks,1) if c.isChecked()], self.travel.isChecked()
+        mode = MODES[self.mode_buttons.checkedId()]
+        return 'normal' if mode == 'shadow' else mode, [str(i) for i,c in enumerate(self.rule_checks,1) if c.isChecked()], self.travel.isChecked()
 
     def show_page(self, page):
         self.pages.setCurrentIndex(page)
@@ -829,6 +834,9 @@ class Window(QMainWindow):
         self.pool = False
         self.index = 0
         self.pool_selection.clear()
+        self.selected_folders.clear()
+        if self.mode_buttons.checkedId() == 3:
+            self.mode_buttons.button(0).setChecked(True)
         self.burst_generation += 1
         self.burst_ids = {}
         self.bursts_scanned = self.bursts_scanning = self.fold_all = False
@@ -886,7 +894,12 @@ class Window(QMainWindow):
 
     def apply_library(self, library, preferred=None):
         preferred = preferred or self.photo
+        if self.library is None and library['shadowPool']:
+            self.mode_buttons.button(3).setChecked(True)
         self.library = library
+        for pool, key in [(False,'activeFolders'),(True,'poolFolders')]:
+            if str(self.selected_folders.get(pool)) not in library[key]:
+                self.selected_folders.pop(pool,None)
         self.root = Path(library['root'])
         self.load_error = False
         self.remember(library)
@@ -924,8 +937,11 @@ class Window(QMainWindow):
             self.begin_io('正在刷新项目统计…',work,finished)
 
     def change_rules(self,*_):
-        self.custom_rules.setVisible(self.mode_buttons.checkedId()==2)
+        self.update_organizer()
         if self.root and self.library and not self.busy:
+            if self.mode_buttons.checkedId() == 3:
+                self.preview_timer.stop()
+                return
             self.run_button.setEnabled(False)
             self.preview_timer.start()
 
@@ -944,6 +960,9 @@ class Window(QMainWindow):
         self.begin_io('正在预检查…',lambda:core.preview_scan(root,core.resolve_effective_rules(mode,set(rules)),travel),update)
 
     def confirm_organize(self):
+        if self.mode_buttons.checkedId() == 3:
+            self.organize()
+            return
         action = '演练' if self.dry.isChecked() else '整理'
         if self.root and QMessageBox.question(self,'开始'+action,f'对所选项目执行{action}？\n{self.root}') == QMessageBox.StandardButton.Yes:
             self.organize()
@@ -959,6 +978,20 @@ class Window(QMainWindow):
         root = self.root
         mode,rules,travel = self.options
         dry = self.dry.isChecked()
+        if self.mode_buttons.checkedId() == 3 and not undo:
+            def prepare():
+                ops.create_shadow(root)
+                return ops.scan(root,mode,rules,travel)
+            def ready(library,error):
+                if error:
+                    self.report(error)
+                    return
+                self.apply_library(library)
+                self.switch_pool(False)
+                self.show_page(1)
+                self.report('影子目录已就绪')
+            self.begin_io('正在同步影子目录…',prepare,ready)
+            return
 
         def work():
             progress = lambda done,total,name:self.tasks.progress.emit(name,done/max(1,total))
@@ -1004,6 +1037,17 @@ class Window(QMainWindow):
         self.run_button.setText('开始演练' if self.dry.isChecked() else '开始整理')
         self.run_button.setEnabled(not self.busy and planned>0)
         self.preview_button.setEnabled(not self.busy)
+        shadow = self.mode_buttons.checkedId() == 3
+        self.custom_rules.setVisible(self.mode_buttons.checkedId() == 2)
+        self.travel.setVisible(not shadow)
+        self.dry.setVisible(not shadow)
+        self.preview_button.setVisible(not shadow)
+        if shadow:
+            pool = lib['shadowPool']
+            self.preview.setText('在素材目录旁复制空目录结构。按 W 将照片移入对应的影子目录。'
+                                 + ('\n'+pool['path'] if pool else ''))
+            self.run_button.setText('同步影子目录并选片' if pool else '创建影子待删池并选片')
+            self.run_button.setEnabled(not self.busy)
         for widget in [self.travel,self.dry,self.custom_rules,*self.mode_buttons.buttons()]:
             widget.setEnabled(not self.busy)
 
@@ -1057,7 +1101,7 @@ class Window(QMainWindow):
         return self.fold_all != (group in self.burst_overrides)
 
     def rebuild_album(self, preferred=None):
-        rows = ops.scoped(self.library,self.scope_name,self.pool)
+        rows = ops.scoped(self.library,self.scope_name,self.pool,self.selected_folders.get(self.pool))
         self.groups = {}
         for photo in rows:
             path = ops.display_path(photo,self.scope_name)
@@ -1123,6 +1167,11 @@ class Window(QMainWindow):
 
     def update_viewer(self,load=True):
         self.show_photo_title()
+        folder = self.selected_folders.get(self.pool)
+        text = folder.name if folder else '全部文件夹'
+        self.folders_button.setText(self.folders_button.fontMetrics().elidedText(text,Qt.TextElideMode.ElideRight,91))
+        self.folders_button.setToolTip(str(folder) if folder else '按文件夹树选片')
+        self.folders_button.setEnabled(bool(self.library) and not self.busy)
         for index, widget in enumerate(self.scope_buttons):
             active = index == self.scope
             widget.setChecked(active)
@@ -1132,7 +1181,7 @@ class Window(QMainWindow):
         for index, widget in enumerate(self.pool_buttons):
             pool = bool(index)
             widget.setChecked(pool == self.pool)
-            size = len(ops.scoped(self.library,self.scope_name,pool))
+            size = len(ops.scoped(self.library,self.scope_name,pool,self.selected_folders.get(pool)))
             widget.setText(f'{"待删池" if pool else "正式池"}  {size}')
             color = (POOL_COLORS if self.dark else ('#117b23','#a44900'))[index]
             widget.setStyleSheet(f'color:{color};border-color:{color};' if pool == self.pool else '')
@@ -1158,6 +1207,47 @@ class Window(QMainWindow):
             self.load_photo()
         self.render_filmstrip()
         self.toggle_inspector()
+
+    def select_folder(self, folder):
+        previous = self.photo
+        self.selected_folders[self.pool] = folder
+        self.index = 0
+        self.rebuild_album(previous)
+
+    def choose_photo_folder(self):
+        if self.busy or not self.library:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('待删池目录' if self.pool else '项目目录')
+        dialog.resize(380,460)
+        layout = QVBoxLayout(dialog)
+        tree = QTreeWidget(dialog)
+        tree.setHeaderHidden(True)
+        layout.addWidget(tree)
+        top = QTreeWidgetItem(tree,['全部文件夹'])
+        nodes = {None:top}
+        folders = map(Path,self.library['poolFolders' if self.pool else 'activeFolders'])
+        for path in sorted(folders,key=lambda p:(len(p.parts),str(p).casefold())):
+            node = QTreeWidgetItem(nodes.get(path.parent,top),[path.name])
+            node.setData(0,Qt.ItemDataRole.UserRole,str(path))
+            node.setToolTip(0,str(path))
+            nodes[path] = node
+        tree.setCurrentItem(nodes.get(self.selected_folders.get(self.pool),top))
+        node = tree.currentItem()
+        while node:
+            node.setExpanded(True)
+            node = node.parent()
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Open | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Open).setText('查看选中目录')
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        tree.itemDoubleClicked.connect(dialog.accept)
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            path = tree.currentItem().data(0,Qt.ItemDataRole.UserRole)
+            self.select_folder(Path(path) if path else None)
+        dialog.deleteLater()
 
     def show_placeholder(self,text,loading=False):
         self.placeholder.setText(text)
@@ -1350,7 +1440,8 @@ class Window(QMainWindow):
         dialog.setTextFormat(Qt.TextFormat.PlainText)
         dialog.setText(f'将 {len(directories)} 个待删池文件夹及其中全部内容移入 Windows 系统回收站？')
         dialog.setInformativeText(f'当前项目：{root}\n可以按 Ctrl+Z 撤回。')
-        dialog.setDetailedText('\n'.join(str(Path(path).relative_to(root)) for path in directories))
+        dialog.setDetailedText('\n'.join(str(Path(path).relative_to(root)) if Path(path).is_relative_to(root) else path
+                                         for path in directories))
         cancel = dialog.addButton(QMessageBox.StandardButton.Cancel)
         cancel.setText('取消')
         move = dialog.addButton('移入 Windows 系统回收站',QMessageBox.ButtonRole.DestructiveRole)

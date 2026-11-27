@@ -12,7 +12,7 @@ from PIL import Image
 from PySide6.QtCore import QPoint, QSettings, QSize, QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMessageBox, QToolButton
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox, QToolButton, QTreeWidget, QTreeWidgetItemIterator
 
 from windows.app import Window
 from windows import media, operations as ops
@@ -33,7 +33,8 @@ def digest(path):
 
 
 def answer_pool_confirmation(ui, confirm):
-    expected = '\n'.join(str(Path(path).relative_to(ui.root)) for path in ui.library['poolDirectories'])
+    expected = '\n'.join(str(Path(path).relative_to(ui.root)) if Path(path).is_relative_to(ui.root) else path
+                         for path in ui.library['poolDirectories'])
     seen = []
 
     def respond():
@@ -54,6 +55,31 @@ def answer_pool_confirmation(ui, confirm):
     QTimer.singleShot(0,respond)
     ui.pool_delete_button.click()
     assert len(seen) == 2 and seen[0] == expected and 'Windows 系统回收站' in seen[1]
+
+
+def choose_folder(ui, folder):
+    seen = []
+
+    def respond():
+        dialog = QApplication.activeModalWidget()
+        if not dialog:
+            return
+        tree = dialog.findChild(QTreeWidget)
+        if tree:
+            iterator = QTreeWidgetItemIterator(tree)
+            while item := iterator.value():
+                path = item.data(0,Qt.ItemDataRole.UserRole)
+                if path == (str(folder) if folder else None):
+                    seen.append(item.text(0))
+                    tree.setCurrentItem(item)
+                    dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Open).click()
+                    return
+                iterator += 1
+        dialog.reject()
+
+    QTimer.singleShot(0,respond)
+    ui.folders_button.click()
+    assert seen == [folder.name if folder else '全部文件夹'] and ui.selected_folders.get(ui.pool) == folder
 
 
 def assert_system_recycle(journal, project, count):
@@ -125,6 +151,11 @@ def test_workflow(base, raw, screenshot):
         assert not ui.pool_delete_button.isVisible()
         wait_for(lambda: ui.frame is not None,'paired JPEG decode')
         assert ui.path.endswith('照片01.JPG') and len(ui.photos) == 1
+        dated_folder = Path(ui.path).parent
+        assert dated_folder.parent != ui.root
+        choose_folder(ui,dated_folder)
+        assert len(ui.photos) == 1
+        choose_folder(ui,None)
         ui.info_toggle.click()
         assert ui.info_toggle.isChecked() and ui.file_details.rowCount() >= 3
         assert ui.frame.metadata.rows['拍摄时间'] == stamp[0x8769][0x9003].replace(':','-',2)
@@ -211,12 +242,59 @@ def test_workflow(base, raw, screenshot):
         assert len(ui.projects)==1
         ui.remove_project(ui.projects[0])
         assert not ui.projects and jpg.exists() and nef.exists()
+        check_shadow_project(ui,base,jpg,nef)
         print('PASS: Windows UI, Unicode project, travel dry run, organize, paired JPEG, RAW scope, focus, scrub, W/S, restore, undo')
     finally:
         for pool in ui.tasks.pools.values():
             pool.waitForDone(5000)
         QTest.qWait(10)
         ui.close()
+
+
+def check_shadow_project(ui, base, jpg, nef):
+    root = base.resolve() / '原始素材'
+    for branch in ('相册甲','相册乙'):
+        folder = root / branch / '原始卡'
+        folder.mkdir(parents=True)
+        shutil.copyfile(jpg,folder/'照片.JPG')
+        shutil.copyfile(nef,folder/'照片.NEF')
+    (root/'相册乙'/'空目录').mkdir()
+    ui.open_project(root)
+    wait_for(lambda: not ui.busy and bool(ui.library),'new folder project')
+    ui.show_page(0)
+    ui.mode_buttons.button(3).click()
+    ui.run_button.click()
+    wait_for(lambda: not ui.busy and ui.pages.currentIndex()==1 and bool(ui.library['shadowPool']),'create shadow pool')
+    mirror = Path(ui.library['shadowPool']['path'])
+    assert mirror.parent == root.parent and (mirror/'相册乙'/'空目录').is_dir()
+    assert not ui.library['history'] and not any(path.is_file() for path in mirror.rglob('照片.*'))
+    choose_folder(ui,root/'相册甲')
+    assert len(ui.photos) == 1 and Path(ui.path).is_relative_to(root/'相册甲')
+    formal = Path(ui.path)
+    relative = formal.relative_to(root)
+    ui.w_button.click()
+    wait_for(lambda: not ui.busy and (mirror/relative).exists(),'staging a scoped pair into the shadow')
+    assert not formal.exists() and (root/'相册乙'/'原始卡'/'照片.JPG').exists()
+    ui.pool_buttons[1].click()
+    choose_folder(ui,mirror/'相册甲'/'原始卡')
+    assert len(ui.photos) == 1 and Path(ui.path) == mirror/relative
+    ui.w_button.click()
+    wait_for(lambda: not ui.busy and formal.exists(),'restore a shadow pair to its original nested location')
+    assert not ui.photos
+    ui.pool_buttons[0].click()
+    assert ui.selected_folders[False] == root/'相册甲' and len(ui.photos) == 1
+    ui.w_button.click()
+    wait_for(lambda: not ui.busy and (mirror/relative).exists(),'stage again for bulk recycle')
+    ui.pool_buttons[1].click()
+    answer_pool_confirmation(ui,True)
+    wait_for(lambda: not ui.busy and not mirror.exists(),'recycle the owned sibling')
+    assert_system_recycle(ui.journal,root,1)
+    ui.restore_delete()
+    wait_for(lambda: not ui.busy and (mirror/relative).exists(),'undo the entire shadow directory recycle')
+    ui.open_project(root)
+    wait_for(lambda: not ui.busy and bool(ui.library),'reopen shadow project')
+    assert ui.mode_buttons.checkedId() == 3 and ui.library['shadowPool']['path'] == str(mirror)
+    print('PASS: travel folder tree, shadow initialization, nested duplicate names, scoped W, restored sibling, persistent mode')
 
 
 def test_nikon_metadata(sample):

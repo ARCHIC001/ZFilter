@@ -9,19 +9,22 @@ from uuid import uuid4
 from PySide6.QtCore import QFile
 
 import nikonfilter as core
-from GUI.filter_bridge import scan
+from GUI.filter_bridge import create_shadow, mirror_path, scan, shadow_pool
 
 SCOPES = ("仅 JPEG", "仅 RAW", "JPEG + RAW")
 
 
-def scoped(library, scope, pool):
+def scoped(library, scope, pool, folder=None):
     if not library:
         return []
     if scope == SCOPES[1]:
-        return library['poolRawPhotos' if pool else 'rawPhotos']
-    photos = library['poolPhotos' if pool else 'photos']
+        photos = library['poolRawPhotos' if pool else 'rawPhotos']
+    else:
+        photos = library['poolPhotos' if pool else 'photos']
     if scope == SCOPES[2]:
-        return [photo for photo in photos if photo['raw'] and photo['status'] == '已配对']
+        photos = [photo for photo in photos if photo['raw'] and photo['status'] == '已配对']
+    if folder:
+        photos = [photo for photo in photos if Path(display_path(photo, scope)).is_relative_to(folder)]
     return photos
 
 
@@ -110,6 +113,14 @@ def inside(root, path):
     return path.resolve()
 
 
+def mirror_item(path, pool):
+    path = Path(path)
+    root = mirror_path(pool)
+    if not path.is_relative_to(root) or path.resolve() != path:
+        raise ValueError(f'影子目录中存在重定向路径：{path}')
+    return path
+
+
 def shadow_destination(root, path, raw):
     relative = path.relative_to(root)
     if any(core.is_shadow_directory(Path(part)) for part in relative.parts[:-1]):
@@ -157,12 +168,20 @@ def stage(root, photo, paths):
     batches = read_journal(journal)
     reserved = {Path(entry['trash']) for batch in batches for entry in batch['entries']}
     entries = []
+    pool = shadow_pool(root)
     for path in paths:
         original = inside(root, path)
         if not original.is_file():
             raise FileNotFoundError(original)
-        destination = shadow_destination(root, original, str(original) == photo.get('raw'))
-        target = inside(root, unique_destination(destination, reserved))
+        if pool:
+            relative = original.relative_to(root)
+            if Path(path) != original or any(core.is_shadow_directory(Path(part)) for part in relative.parts[:-1]):
+                raise ValueError('文件不在正式池。')
+            destination = mirror_path(pool, create=True) / relative
+            target = mirror_item(unique_destination(destination, reserved), pool)
+        else:
+            destination = shadow_destination(root, original, str(original) == photo.get('raw'))
+            target = inside(root, unique_destination(destination, reserved))
         reserved.add(target)
         entries.append({'original': str(original), 'trash': str(target)})
     if entries:
@@ -173,14 +192,21 @@ def stage(root, photo, paths):
 def restore_pool(root, paths=(), all_batches=False):
     journal = inside(root, pool_journal(root))
     batches = read_journal(journal)
-    requested = {inside(root, path) for path in paths}
+    pool = shadow_pool(root)
+    external = Path(pool['path']) if pool else None
+    def pool_source(path):
+        return mirror_item(path, pool) if external and Path(path).is_relative_to(external) else inside(root, path)
+    requested = {pool_source(path) for path in paths}
     selected = {}
     for batch in batches:
         for entry in batch['entries']:
-            source = inside(root, entry['trash'])
+            source = Path(entry['trash'])
             if source in requested or (all_batches and source.is_file()):
-                selected[source] = inside(root, entry['original'])
+                selected[pool_source(source)] = inside(root, entry['original'])
     for source in requested.difference(selected):
+        if external and source.is_relative_to(external):
+            selected[source] = inside(root, root / source.relative_to(external))
+            continue
         parts = list(source.relative_to(root).parts)
         index = next((i for i, part in enumerate(parts[:-1]) if core.is_shadow_directory(Path(part))), None)
         if index is None:
@@ -203,7 +229,16 @@ def system_recycle_path(path):
 
 def recycle(root, paths, journal, *, directories=False):
     originals = []
+    pool = shadow_pool(root)
+    external = Path(pool['path']) if pool else None
     for path in paths:
+        candidate = Path(path)
+        if external and candidate.is_relative_to(external):
+            original = mirror_item(candidate, pool)
+            if (directories and original == external) or (not directories and original.is_file()):
+                originals.append(original)
+                continue
+            raise ValueError(f'待删池目录已经变化，请刷新后重试：{path}')
         original = inside(root, path)
         if directories:
             parents = [Path(part) for part in original.relative_to(root).parts[:-1]]
@@ -252,7 +287,16 @@ def restore_recycle(journal):
     selected = {}
     for entry in batches[-1]:
         root = core.safe_resolve_dir(entry['root'])
-        target = inside(root, entry['original'])
+        original = Path(entry['original'])
+        pool = shadow_pool(root) if entry.get('systemRecycle') else None
+        external = Path(pool['path']) if pool else None
+        if external and original.is_relative_to(external):
+            if original == external and not original.exists() and not original.is_symlink():
+                target = external  # The entire directory, including its ownership marker, is in the Recycle Bin.
+            else:
+                target = mirror_item(original, pool)
+        else:
+            target = inside(root, original)
         if entry.get('systemRecycle'):
             source = Path(entry['trash'])
             if not system_recycle_path(source) or source.is_symlink() or getattr(source, 'is_junction', lambda: False)():
