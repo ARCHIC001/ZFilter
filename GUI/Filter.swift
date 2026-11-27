@@ -738,6 +738,7 @@ struct ContentView: View {
     @State private var confirmUndo = false
     @State private var deletingPool: PoolRemoval?
     @State private var choosingFolder = false
+    @State private var folderRowsHeight: CGFloat?
     var observeFolderPicker: ((CGRect, Binding<Bool>) -> Void)? = nil
     var accent: Color { Color(nsColor: FilterPalette.blue.accent(dark: colorScheme == .dark)) }
     var accentInk: Color { FilterPalette.blue.ink(dark: colorScheme == .dark) }
@@ -1150,9 +1151,9 @@ struct ContentView: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     HStack(spacing: 10) {
                         viewerTitle
-                        viewerScopeTools
+                        viewerActionTools
                     }
-                    viewerActionTools
+                    viewerScopeTools
                 }
             }
         }.tint(Color.primary).padding(.horizontal,12).padding(.vertical,10)
@@ -1197,7 +1198,10 @@ struct ContentView: View {
         }.buttonStyle(ViewerToolStyle()).padding(3).glassEffect(.regular.interactive(),in: RoundedRectangle(cornerRadius: 9))
     }
     var folderPicker: some View {
-        Button { choosingFolder.toggle() } label: {
+        Button {
+            if !choosingFolder { folderRowsHeight = nil }
+            choosingFolder.toggle()
+        } label: {
             HStack(spacing: 7) {
                 Image(systemName: "folder").font(.system(size: 13, weight: .medium))
                 Text(m.currentFolderTitle).font(.system(size: 12, weight: .medium))
@@ -1231,9 +1235,10 @@ struct ContentView: View {
                             OutlineGroup(tree, children: \.children) { folder in
                                 folderPickerRow(folder.name, path: folder.id)
                             }
-                        }
+                        }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { folderRowsHeight = $0 }
                     }.scrollIndicators(.automatic)
-                }.foregroundStyle(.primary).padding(12).frame(width: 368, height: 338)
+                        .frame(height: min(folderRowsHeight ?? CGFloat((tree.count + 1) * 37), 288))
+                }.foregroundStyle(.primary).padding(12).frame(width: 368)
                     .accessibilityIdentifier("folderPickerPanel")
             }
     }

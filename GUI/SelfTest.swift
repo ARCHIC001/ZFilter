@@ -1125,6 +1125,8 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
         if checkPicker {
             app.activate()
             model.page = 1; model.exif = true; model.deleteMode = "仅 JPEG"
+            model.prefetch()
+            try await Task.sleep(nanoseconds: 600_000_000)
             for width in [1000, 1280] {
                 window.setContentSize(NSSize(width: width, height: 710))
                 window.center(); pump(); view.layoutSubtreeIfNeeded()
