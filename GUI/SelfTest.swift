@@ -1113,11 +1113,50 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
     if let error=model.error { throw FileActions.failure(error) }
     let output=URL(fileURLWithPath:FileManager.default.currentDirectoryPath).appendingPathComponent("build")
     func pump() { let end=Date().addingTimeInterval(0.5); while Date()<end { RunLoop.main.run(until:Date().addingTimeInterval(0.01)) } }
+    let checkPicker = CommandLine.arguments.contains("--folder-picker")
+    func accessible(_ root: Any, identifier: String) -> NSAccessibilityProtocol? {
+        guard let node = root as? NSAccessibilityProtocol else { return nil }
+        if node.accessibilityIdentifier() == identifier, node.accessibilityFrame().width > 0 { return node }
+        return node.accessibilityChildren()?.lazy.compactMap { accessible($0, identifier: identifier) }.first
+    }
     for scheme in [ColorScheme.light, .dark] {
         let view=NSHostingView(rootView:ContentView().environmentObject(model).environment(\.colorScheme,scheme))
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:960),styleMask:[.titled],backing:.buffered,defer:false)
         window.appearance=NSAppearance(named:scheme == .light ? .aqua : .darkAqua)
         window.contentView=view; window.title="Filter appearance QA"; window.makeKeyAndOrderFront(nil)
+        if checkPicker {
+            model.page = 1; model.exif = true; model.deleteMode = "仅 JPEG"
+            for width in [1000, 1280] {
+                window.setContentSize(NSSize(width: width, height: 710))
+                window.center(); pump(); view.layoutSubtreeIfNeeded()
+                guard let button = accessible(view, identifier: "folderPicker") ?? accessible(window, identifier: "folderPicker") else {
+                    throw FileActions.failure("Directory trigger accessibility identifier is missing at \(scheme) \(width)")
+                }
+                let frame = button.accessibilityFrame()
+                guard (144...215).contains(frame.width.rounded()), window.frame.contains(frame) else {
+                    throw FileActions.failure("Directory trigger is clipped at \(scheme) \(width): \(frame)")
+                }
+                guard button.accessibilityPerformPress() else {
+                    throw FileActions.failure("Directory trigger did not accept a press at \(scheme) \(width)")
+                }
+                pump()
+                guard let panelWindow = app.windows.first(where: { $0.isVisible && accessible($0, identifier: "folderPickerPanel") != nil }),
+                      panelWindow != window else { throw FileActions.failure("Directory popover did not open") }
+                for (part, target) in [("toolbar", window), ("panel", panelWindow)] {
+                    let path = output.appendingPathComponent("folder-\(scheme)-\(width)-\(part).png")
+                    let capture = Process()
+                    capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                    capture.arguments = ["-x", "-o", "-l", String(target.windowNumber), path.path]
+                    try capture.run(); capture.waitUntilExit()
+                    if capture.terminationStatus != 0 { print("Window capture unavailable for \(part)") }
+                }
+                _ = button.accessibilityPerformPress()
+                pump()
+            }
+            print("PASS directory toolbar width and native popover in \(scheme), at 1000 and 1280 points")
+            window.orderOut(nil)
+            continue
+        }
         // cacheDisplay does not capture the native CALayer image surface or
         // glass compositor. Verify the viewer in its actual running window.
         for page in [0] {
@@ -1131,5 +1170,5 @@ func runMetadataTests(_ jpeg: String,temp: URL) throws {
     }
     if let token=model.keyMonitor { NSEvent.removeMonitor(token) }
     preferences.removePersistentDomain(forName:suite)
-    print("Rendered light/dark organizer previews; viewer requires live compositor verification")
+    if !checkPicker { print("Rendered light/dark organizer previews; viewer requires live compositor verification") }
 }
