@@ -12,7 +12,7 @@ from PIL import Image
 from PySide6.QtCore import QPoint, QSettings, QSize, QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox, QToolButton, QTreeWidget, QTreeWidgetItemIterator
+from PySide6.QtWidgets import QApplication, QBoxLayout, QDialogButtonBox, QMessageBox, QToolButton, QTreeWidget, QTreeWidgetItemIterator
 
 from windows.app import Window
 from windows import media, operations as ops
@@ -71,6 +71,8 @@ def choose_folder(ui, folder):
                 path = item.data(0,Qt.ItemDataRole.UserRole)
                 if path == (str(folder) if folder else None):
                     seen.append(item.text(0))
+                    seen.append(dialog.objectName() == 'folderPicker' and tree.objectName() == 'folderTree'
+                                and tree.parentWidget().dark == ui.dark)
                     tree.setCurrentItem(item)
                     dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Open).click()
                     return
@@ -79,7 +81,7 @@ def choose_folder(ui, folder):
 
     QTimer.singleShot(0,respond)
     ui.folders_button.click()
-    assert seen == [folder.name if folder else '全部文件夹'] and ui.selected_folders.get(ui.pool) == folder
+    assert seen == [folder.name if folder else '全部文件夹', True] and ui.selected_folders.get(ui.pool) == folder
 
 
 def assert_system_recycle(journal, project, count):
@@ -151,6 +153,18 @@ def test_workflow(base, raw, screenshot):
         assert not ui.pool_delete_button.isVisible()
         wait_for(lambda: ui.frame is not None,'paired JPEG decode')
         assert ui.path.endswith('照片01.JPG') and len(ui.photos) == 1
+        initial_theme = ui.dark
+        for width,direction in [(980,QBoxLayout.Direction.TopToBottom),(1320,QBoxLayout.Direction.LeftToRight)]:
+            ui.resize(width,720)
+            QTest.qWait(40)
+            assert ui.viewer_header_layout.direction() == direction
+            assert ui.folders_button.width() >= 154 and ui.folders_button.height() == ui.pool_buttons[0].height()
+            assert ui.folders_button.iconSize() == QSize(18,18) and not ui.folders_button.icon().isNull()
+            choose_folder(ui,None)
+            ui.brand.click()
+        assert ui.dark == initial_theme
+        ui.resize(1320,880)
+        print('PASS: folder toolbar sizing, alignment and themed directory surface in light/dark')
         dated_folder = Path(ui.path).parent
         assert dated_folder.parent != ui.root
         choose_folder(ui,dated_folder)

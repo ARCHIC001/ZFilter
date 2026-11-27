@@ -14,7 +14,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QAbstractButton, QBoxLayout, QButtonGroup, QCheckBox, QDateTimeEdit, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea,
+    QMainWindow, QMenu, QMessageBox, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
     QStackedWidget, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -330,16 +330,31 @@ class Window(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(12,12,12,12)
         layout.setSpacing(10)
-        tools = QHBoxLayout()
+        self.viewer_header = QWidget()
+        self.viewer_header_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom,self.viewer_header)
+        self.viewer_header_layout.setContentsMargins(0,0,0,0)
+        self.viewer_header_layout.setSpacing(7)
+        self.viewer_scope_tools = QWidget()
+        tools = QHBoxLayout(self.viewer_scope_tools)
+        tools.setContentsMargins(0,0,0,0)
+        tools.setSpacing(6)
         self.photo_title = label('沉浸选片','section')
         self.photo_subtitle = label('', 'muted')
-        title = QVBoxLayout()
+        details = QWidget()
+        details.setMinimumWidth(97)
+        title = QVBoxLayout(details)
+        title.setContentsMargins(0,0,0,0)
         title.setSpacing(2)
+        for text in (self.photo_title,self.photo_subtitle):
+            text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
         title.addWidget(self.photo_title)
         title.addWidget(self.photo_subtitle)
-        tools.addLayout(title, 1)
-        self.folders_button = button('全部文件夹',self.choose_photo_folder)
-        self.folders_button.setFixedWidth(115)
+        tools.addWidget(details,1)
+        self.folders_button = button('全部文件夹',self.choose_photo_folder,glyph='folder')
+        self.folders_button.setObjectName('folderScope')
+        self.folders_button.setMinimumWidth(154)
+        self.folders_button.setMaximumWidth(204)
+        self.folders_button.setFixedHeight(34)
         tools.addWidget(self.folders_button)
         self.pool_buttons = []
         for index, title in enumerate(('正式池','待删池')):
@@ -356,10 +371,17 @@ class Window(QMainWindow):
         self.fullscreen_button = button('',self.toggle_fullscreen,'全屏 · F11',compact=True,glyph='maximize')
         self.focus_toggle.setChecked(self.settings.value('focusBox',False,bool))
         self.strip_toggle.setChecked(self.settings.value('filmstrip',True,bool))
+        self.viewer_action_tools = QWidget()
+        action_row = QHBoxLayout(self.viewer_action_tools)
+        action_row.setContentsMargins(0,0,0,0)
+        action_row.setSpacing(5)
         for widget in (self.zoom_button,self.fit_button,self.focus_toggle,self.strip_toggle,self.burst_toggle,self.info_toggle,
                        self.fullscreen_button,button('',self.rescan,'刷新配对 · Ctrl+R',compact=True,glyph='refresh')):
-            tools.addWidget(widget)
-        layout.addLayout(tools)
+            action_row.addWidget(widget)
+        self.viewer_header_layout.addWidget(self.viewer_scope_tools,1)
+        self.viewer_header_layout.addWidget(self.viewer_action_tools,0,Qt.AlignmentFlag.AlignRight)
+        self.viewer_header.installEventFilter(self)
+        layout.addWidget(self.viewer_header)
         middle = QHBoxLayout()
         image_column = QVBoxLayout()
         image_column.setSpacing(9)
@@ -592,6 +614,8 @@ class Window(QMainWindow):
             QPushButton:hover,QToolButton:hover {{border-color:{g};}}
             QPushButton:checked,QToolButton:checked {{border-color:{g};color:{g};}}
             QPushButton:disabled,QToolButton:disabled {{color:{f};}}
+            QPushButton#folderScope {{font-weight:500;text-align:left;}}
+            QPushButton#folderScope:hover:enabled {{border-color:{f};background:{active_tool};}}
             QPushButton#bulkTrash:enabled {{color:{destructive};}}
             QPushButton#bulkTrash:hover:enabled {{border-color:{destructive};}}
             QPushButton#brand {{background:transparent;border-color:transparent;text-align:left;font-size:20px;font-weight:700;padding:4px;}}
@@ -605,6 +629,11 @@ class Window(QMainWindow):
             QToolButton#tool:pressed {{background:{active_tool};}}
             QToolButton#tool:focus {{border-color:{g};}}
             QToolButton#badge {{font-size:10px;padding:1px 4px;background:{b};}}
+            QDialog#folderPicker {{background:{b};}}
+            QTreeWidget#folderTree {{background:transparent;border:0;outline:0;}}
+            QTreeWidget#folderTree::item {{height:28px;border-radius:5px;}}
+            QTreeWidget#folderTree::item:hover {{background:{c};}}
+            QTreeWidget#folderTree::item:selected {{background:{active_tool};color:{e};}}
             QScrollArea,QScrollArea>QWidget>QWidget {{background:transparent;}}
             QListWidget {{background:transparent;border:0;outline:0;}}
             QListWidget::item {{min-height:43px;border-radius:7px;padding:3px;}}
@@ -1165,13 +1194,26 @@ class Window(QMainWindow):
         offline = self.root is not None and self.presence.get(str(self.root)) == False
         self.photo_subtitle.setText('项目离线' if offline else f'{self.scope_name} · {self.viewport_label}')
 
+    def eventFilter(self, widget, event):
+        if widget is getattr(self, 'viewer_header', None) and event.type() == QEvent.Type.Resize:
+            self.layout_viewer_header(event.size().width())
+        return super().eventFilter(widget,event)
+
+    def layout_viewer_header(self, width):
+        layout = self.viewer_header_layout
+        needed = self.viewer_scope_tools.sizeHint().width() + self.viewer_action_tools.sizeHint().width() + layout.spacing()
+        direction = QBoxLayout.Direction.LeftToRight if width >= needed else QBoxLayout.Direction.TopToBottom
+        if layout.direction() != direction:
+            layout.setDirection(direction)
+
     def update_viewer(self,load=True):
         self.show_photo_title()
         folder = self.selected_folders.get(self.pool)
         text = folder.name if folder else '全部文件夹'
-        self.folders_button.setText(self.folders_button.fontMetrics().elidedText(text,Qt.TextElideMode.ElideRight,91))
+        self.folders_button.setText(self.folders_button.fontMetrics().elidedText(text,Qt.TextElideMode.ElideMiddle,158))
         self.folders_button.setToolTip(str(folder) if folder else '按文件夹树选片')
         self.folders_button.setEnabled(bool(self.library) and not self.busy)
+        self.layout_viewer_header(self.viewer_header.width())
         for index, widget in enumerate(self.scope_buttons):
             active = index == self.scope
             widget.setChecked(active)
@@ -1218,10 +1260,21 @@ class Window(QMainWindow):
         if self.busy or not self.library:
             return
         dialog = QDialog(self)
-        dialog.setWindowTitle('待删池目录' if self.pool else '项目目录')
-        dialog.resize(380,460)
-        layout = QVBoxLayout(dialog)
-        tree = QTreeWidget(dialog)
+        dialog.setObjectName('folderPicker')
+        title = '待删池目录' if self.pool else '项目目录'
+        dialog.setWindowTitle(title)
+        dialog.resize(410,435)
+        outer = QVBoxLayout(dialog)
+        outer.setContentsMargins(8,8,8,8)
+        material = Material()
+        material.dark = self.dark
+        if self.frame:
+            material.backdrop = self.frame.blur
+        outer.addWidget(material)
+        layout = QVBoxLayout(material)
+        layout.setContentsMargins(12,12,12,12)
+        tree = QTreeWidget(material)
+        tree.setObjectName('folderTree')
         tree.setHeaderHidden(True)
         layout.addWidget(tree)
         top = QTreeWidgetItem(tree,['全部文件夹'])
